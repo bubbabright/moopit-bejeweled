@@ -153,7 +153,7 @@ The procedural art is a stand-in for real assets and already matches the final c
 Live at **<https://gemfall.moopit.fun>**, serving the Netlify project `moopit-bejeweled`
 (team `bubbAlab`, account slug `bubbabright`).
 
-Deploy a new build:
+Deploy by pushing to `main` — Netlify builds it. To ship without a commit, or from a dirty tree:
 
 ```bash
 npm run build
@@ -180,17 +180,24 @@ The **Gemfall** tile is live in the **Fun** section of `/srv/dashy/user-data/con
 Dashy service restarted afterwards. It stays `644 opc:opc` — an earlier Cloudflare 520 was
 caused by this file being `600`, which the container's non-root user cannot read.
 
-### Still to do
+### Git-push auto-deploy (done)
 
-1. **Git-push auto-deploy (decision #4).** The repo is pushed to
-   `github.com/bubbabright/moopit-bejeweled`, but continuous deployment is *not* wired up yet —
-   `netlify init` needs an interactive GitHub authorisation grant that cannot be completed from
-   a non-interactive shell. Run `netlify init` in this directory and choose
-   *Authorize with GitHub through app.netlify.com*. Deploys are manual until then.
-2. **Cloudflare proxy.** DNS for `gemfall.moopit.fun` is Cloudflare-proxied, which is why
-   Netlify reports `ssl: false` for the custom domain — Cloudflare terminates TLS at the edge
-   with its `*.moopit.fun` certificate, so visitors still get HTTPS. Spec §9 asked for a
-   **DNS-only** record to match how tetris and snake are exposed. Either set the record to
-   DNS-only (grey cloud) so Netlify provisions its own certificate, or leave the proxy and make
-   sure Cloudflare's SSL mode is *Full* rather than *Full (strict)*.
+Pushing to `main` triggers a Netlify build. The repo is `github.com/bubbabright/moopit-bejeweled`.
+
+This was set up with `netlify init --manual`, which deliberately skips the GitHub OAuth flow and
+instead prints the two things to wire up by hand:
+
+1. an SSH **deploy key** on the repo (read-only, from Netlify's `listDeployKeys`);
+2. a **push webhook** to `https://api.netlify.com/hooks/github`.
+
+Both were applied with the `gh` CLI. Netlify's own API has no endpoint to link a repo, and the
+GitHub App route needs an interactive grant, so `--manual` is the only scriptable path. Note that
+`netlify init` cannot be driven by piping into it — it consumes the whole buffer on the first
+prompt and then hits EOF; a PTY is required.
+
+### Cloudflare (resolved)
+
+The `gemfall` record started out Cloudflare-proxied, which left Netlify unable to validate a
+certificate for the custom domain (`ssl: false`). The record is now **DNS-only**, so Netlify
+terminates TLS directly with its own `CN=gemfall.moopit.fun` certificate and `ssl: true`.
 
