@@ -67,6 +67,7 @@ npm run typecheck    # must be clean
 npm run selftest     # engine correctness (headless Chromium)
 npm run playtest     # integration: real clicks on a real build
 npm run visual       # offline pixel checks on the screenshots
+npm run scaling      # the board fits every viewport, incl. phones
 ```
 
 **`npm run selftest`** — runs `selftest.html` (which imports the Phaser-free engine in
@@ -95,6 +96,14 @@ npm run playtest -- http://127.0.0.1:5173       # the dev server (default)
 ```
 
 It writes `poc/menu.png`, `poc/game-start.png`, `poc/game-played.png` and `poc/geometry.json`.
+
+**`npm run scaling [url]`** — loads the game at five viewports (iPhone portrait and landscape, a
+small Android, a tablet, and a short desktop window) and asserts the canvas fits inside the
+window with the correct 720:900 aspect ratio. This is a regression guard for a feedback loop that
+made the board unscalable on phones: `#game` was sized by its own content, so the 720x900 canvas
+inflated its own parent, Phaser read `parentSize = 720x900`, computed scale 1.0 and never shrank.
+The container is now pinned to the viewport, and this gate fails if anything sizes it by content
+again.
 
 **`npm run visual`** — reads those screenshots and `geometry.json` with Pillow and checks what
 the playtest cannot assert numerically: the menu really renders as three separated pills aligned
@@ -162,6 +171,12 @@ netlify deploy --prod --dir=dist
 
 Caching headers in `netlify.toml` are applied: hashed assets are `immutable`, `index.html` is
 `must-revalidate`. Both were confirmed on the live site.
+
+Every build is stamped with a version and the commit it came from, e.g. `v0.2.0 · d07b4a8`. The
+stamp is read from `package.json` plus `COMMIT_REF` (which Netlify sets) in `vite.config.ts`, and
+shown at the bottom of the menu. `window.gemfallVersion` and `window.gemfallPhaser` expose it to
+devtools, and `npm run playtest` prints it, which is how you tell whether you are looking at a
+stale cached bundle or the build you just pushed.
 
 ### Dashy tile (done)
 

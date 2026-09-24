@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
+import { VERSION_LABEL } from './version';
 import BootScene from './scenes/BootScene';
 import MenuScene from './scenes/MenuScene';
 import GameScene from './scenes/GameScene';
@@ -26,5 +27,14 @@ const game = new Phaser.Game({
   scene: [BootScene, MenuScene, GameScene],
 });
 
-// Debug handle: lets devtools (and the headless playtest) inspect or step the loop.
-(window as unknown as { gemfall?: Phaser.Game }).gemfall = game;
+// Debug handle: lets devtools (and the headless playtest) inspect or step the loop,
+// and read which build is running.
+const debug = window as unknown as {
+  gemfall?: Phaser.Game;
+  gemfallVersion?: string;
+  gemfallPhaser?: string;
+};
+debug.gemfall = game;
+debug.gemfallVersion = VERSION_LABEL;
+// Phaser is bundled, not global, so expose its version for diagnostics.
+debug.gemfallPhaser = Phaser.VERSION;

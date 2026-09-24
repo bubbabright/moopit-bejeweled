@@ -15,6 +15,7 @@ import {
   type Mode,
 } from '../config';
 import { loadSavedRun, loadSettings, saveSettings } from '../core/storage';
+import { VERSION_LABEL } from '../version';
 import { sfx } from '../audio/sfx';
 import { Pill } from '../ui/pill';
 import { gemTextureKey } from '../gfx/gems';
@@ -147,6 +148,16 @@ export default class MenuScene extends Phaser.Scene {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#6f6ba8',
+      })
+      .setOrigin(0.5);
+
+    // Which build is this? Auto-deploy makes it easy to be staring at a stale
+    // bundle, so the version and commit are visible on the menu.
+    this.add
+      .text(GAME_WIDTH / 2, 856, VERSION_LABEL, {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#57548a',
       })
       .setOrigin(0.5);
 

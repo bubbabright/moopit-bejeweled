@@ -164,6 +164,11 @@ const canvasInfo = await evaluate(`
     };
   })()
 `);
+const build = await evaluate(
+  `({ version: window.gemfallVersion ?? null, phaser: window.gemfallPhaser ?? null })`,
+);
+console.log(`build: ${build.version ?? 'unknown'}  (phaser ${build.phaser ?? '?'})`);
+
 console.log('canvas rect:', canvasInfo);
 
 /** Game coordinates → viewport coordinates. */

@@ -1,7 +1,7 @@
 {
   "name": "moopit-bejeweled",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "GEMFALL — an original Bejeweled-like match-3 game (Phaser 3 + Vite + TypeScript)",
   "scripts": {
@@ -12,6 +12,7 @@
     "selftest": "tools/selftest.sh",
     "playtest": "node tools/playtest.mjs",
     "visual": "python3 tools/analyze-shots.py poc",
+    "scaling": "node tools/probe-scale.mjs",
     "poc": "tools/poc.sh"
   },
   "dependencies": {

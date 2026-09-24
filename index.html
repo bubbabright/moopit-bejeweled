@@ -29,8 +29,6 @@
     }
 
     body {
-      display: grid;
-      place-items: center;
       min-height: 100dvh;
       background:
         radial-gradient(120% 90% at 50% -10%, #2a1a5e 0%, #180f3c 42%, #0b0718 78%),
@@ -57,15 +55,30 @@
       to   { transform: translate3d(6%, 4%, 0) scale(1.1); }
     }
 
+    /*
+     * The canvas must never size its own container.
+     *
+     * Phaser's FIT scale is computed from the parent element's box. If the parent is
+     * sized by its content, the 720x900 canvas inflates it to 720x900, Phaser reads
+     * parentSize=720x900, concludes scale 1.0, and the board never shrinks — which is
+     * exactly what happened on phones. Pinning the container to the viewport instead
+     * means the canvas can be larger than its parent, and FIT can do its job.
+     *
+     * 100dvh rather than 100% because the layout viewport extends behind mobile
+     * browser chrome.
+     */
     #game {
-      position: relative;
-      width: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
       height: 100%;
-      display: grid;
-      place-items: center;
+      height: 100dvh;
+      overflow: hidden;
     }
 
     #game canvas {
+      display: block;
       border-radius: 20px;
       box-shadow:
         0 30px 80px rgba(0, 0, 0, 0.55),
