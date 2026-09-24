@@ -1064,12 +1064,9 @@ export default class GameScene extends Phaser.Scene {
       this.showFloatingPoints(cleared, result.total, result.multiplier);
 
       sfx.match(depth);
-      haptics.match(depth);
       if (hypers > 0) sfx.hyper();
       if (bombs > 0) sfx.bomb();
       if (lines > 0) sfx.line();
-      // A power gem going off is a bigger bang than a plain match, so it lands harder.
-      if (lines + bombs + hypers > 0) haptics.detonation();
 
       const clearedPositions = [...cleared].map(parseKey);
       for (const pos of clearedPositions) {
@@ -1078,7 +1075,9 @@ export default class GameScene extends Phaser.Scene {
       }
       if (!this.reduceMotion && clearedPositions.length > 4) this.cameras.main.shake(140, 0.0035);
 
-      await this.animateClear(clearedPositions, depth);
+      // A power gem going off is a bigger bang than a plain match, so it buzzes harder.
+      // The pulse itself is fired inside animateClear, on the frame the gems burst.
+      await this.animateClear(clearedPositions, depth, lines + bombs + hypers > 0);
 
       // Created power gems replace the cells they spawned in.
       for (const spawn of spawns) {
@@ -1112,7 +1111,7 @@ export default class GameScene extends Phaser.Scene {
    * (squash inward), flash white, then burst outward and vanish. Deeper cascades
    * run the same animation faster so a long chain stays snappy.
    */
-  private async animateClear(cells: Pos[], depth = 1): Promise<void> {
+  private async animateClear(cells: Pos[], depth = 1, heavy = false): Promise<void> {
     const total = Math.max(
       TIMING.clearMinMs,
       TIMING.clearMs * Math.pow(TIMING.cascadeRamp, Math.max(0, depth - 1)),
@@ -1120,6 +1119,17 @@ export default class GameScene extends Phaser.Scene {
     const inhaleMs = total * 0.18;
     const explodeMs = total - inhaleMs;
     const work: Promise<void>[] = [];
+
+    // Buzz on the burst beat, and put it in the same callback that flashes the gem white
+    // rather than on a timer of its own: `onStart` fires once the inhale delay has expired,
+    // which is the frame the gems let go, so the buzz and the flash cannot drift apart.
+    // One pulse per step — a step is a match or a detonation, never both.
+    let buzzed = false;
+    const buzz = (): void => {
+      if (buzzed) return;
+      buzzed = true;
+      haptics.explosion(depth, heavy);
+    };
 
     for (const pos of cells) {
       const cell = this.grid[pos.row]?.[pos.col];
@@ -1154,7 +1164,10 @@ export default class GameScene extends Phaser.Scene {
           delay: inhaleMs,
           ease: 'Quad.easeIn',
           // tweenPromise owns onComplete, so hook the flash on start instead.
-          onStart: () => sprite.setTintFill(0xffffff),
+          onStart: () => {
+            sprite.setTintFill(0xffffff);
+            buzz();
+          },
         }),
       );
       work.push(
@@ -1167,6 +1180,9 @@ export default class GameScene extends Phaser.Scene {
         }),
       );
     }
+
+    // Nothing animated (reduced motion, or no sprites left to flash): buzz straight away.
+    if (work.length === 0) buzz();
 
     await Promise.all(work);
 

@@ -563,8 +563,19 @@ if (spriteAudit.tinted.length > 0) {
 const vibes = await evaluate('window.__vibes');
 const vibeCounts = Array.isArray(vibes) ? vibes.length : 0;
 console.log(`haptics: ${vibeCounts} vibration request(s) during play`);
-if (vibeCounts > 0) console.log(`  first few: ${JSON.stringify(vibes.slice(0, 4))}`);
+// Print every pattern, not a sample, so a missing heavy (power-gem) pattern is visible.
+if (vibeCounts > 0) console.log(`  patterns: ${JSON.stringify(vibes)}`);
 if (vibeCounts === 0) problems.push('no vibration requested on match explosions');
+// Every "on" segment must be long enough for an Android motor to actually spin up. The stub
+// accepts anything, so this is the only thing here that catches a pulse too short to feel
+// (the old 18 ms tap and 1 ms "unlock" both passed while buzzing nothing on a real phone).
+const MIN_ON_MS = 40;
+const tooShort = (Array.isArray(vibes) ? vibes : []).filter((p) =>
+  (Array.isArray(p) ? p : [p]).some((ms, i) => i % 2 === 0 && ms < MIN_ON_MS),
+);
+if (tooShort.length > 0) {
+  problems.push(`${tooShort.length} vibration pattern(s) with an on-pulse under ${MIN_ON_MS} ms: ${JSON.stringify(tooShort.slice(0, 4))}`);
+}
 
 // ── verdict ───────────────────────────────────────────────────────────────────
 

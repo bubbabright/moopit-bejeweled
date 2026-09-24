@@ -339,8 +339,7 @@ export default class MenuScene extends Phaser.Scene {
     saveSettings(settings);
     haptics.enabled = settings.haptics;
     this.hapticPill.setLabel(settings.haptics ? 'BUZZ ON' : 'BUZZ OFF');
-    // Fire one so the toggle demonstrates itself, and to unlock vibration on the
-    // user gesture where the platform requires it.
-    if (settings.haptics) haptics.unlock();
+    // Fire one so the toggle demonstrates itself.
+    if (settings.haptics) haptics.confirm();
   }
 }

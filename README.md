@@ -46,6 +46,7 @@ Requires Node 20+ (developed on Node 24). `netlify.toml` pins `NODE_VERSION = "2
 | Drag/swipe toward a neighbour | Swap on release |
 | Arrow keys, then Enter/Space | Move the cursor and swap |
 | `H` hint · `P`/`Esc` pause · `M` mute · `R` restart | Shortcuts |
+| `SOUND ON/OFF` · `BUZZ ON/OFF` (menu, top right) | Mute the synth SFX · mute phone vibration |
 
 ### Modes and difficulty
 
@@ -114,6 +115,17 @@ The playtest also guards **animation readability**: it asserts that at least one
 ≥600 ms of game time animating. Matches and falls are meant to be seen, so a regression back to
 instant clears fails this gate.
 
+And it guards that the buzz still fires at all: `navigator.vibrate` is stubbed before the page
+loads (it has to be — `src/haptics.ts` reads platform support once at import) and the gate fails
+if no vibration was requested while matches were clearing.
+
+Where that buzz *lands* is not asserted here, because the harness cannot measure it reliably:
+driving Phaser's loop with no real time between steps under-drives tweens and timers, so the
+phase of a 162 ms beat inside a 900 ms clear is not observable (see the headless gotchas below).
+It is guaranteed by construction instead — the pulse is fired from the same `onStart` callback
+that flashes the gem white, and a Phaser tween's `onStart` runs *after* its `delay`, so both land
+on the burst beat in one place with nothing to keep in step.
+
 > A WebGL canvas cannot be read back via `drawImage` in headless Chromium, which is why the
 > visual gate works on `Page.captureScreenshot` output analysed offline instead.
 
@@ -123,6 +135,12 @@ instant clears fails this gate.
   Phaser's loop manually with `game.loop.step()` on a synthetic clock rather than trusting rAF.
 - `window.blur` fires on load in headless. Auto-pause is therefore gated behind "ready and the
   player has interacted" so a headless load does not immediately pause the scene.
+- Pumps with **no real time between steps** under-drive the loop. A 260-frame pump loop inside
+  one `evaluate` advanced a 130 ms tween by ~76 ms of its own elapsed time, and a move sat in
+  its swap phase for the whole window — while the same click path resolves fine in the playtest,
+  which interleaves real-time waits (`sleep`, `waitFor`, screenshots) that let the browser step
+  the loop for real. So when a probe wedges, suspect the driving method before the game, and
+  reproduce in `tools/playtest.mjs` before filing it.
 - `tools/probe-*.mjs` are one-off diagnostics kept for reference (the hit-area and layout probes
   are what localised the two bugs above). They are not part of the gate and not shipped.
 
@@ -146,7 +164,7 @@ tools/
   probe-*.mjs        diagnostic scripts (reference only)
 ```
 
-## Art and audio
+## Art, audio and haptics
 
 The procedural art is a stand-in for real assets and already matches the final contract in
 [spec §7](./bejeweled-spec.md), so artwork can be dropped in **without code changes**:
@@ -156,6 +174,33 @@ The procedural art is a stand-in for real assets and already matches the final c
 - Optional `assets/gems@2x.png` at 128×128 cells for retina.
 - Audio overrides go in `assets/sfx/*.ogg`, keyed by the same event names as the procedural
   engine. No audio files ship today; all sound is synthesised with WebAudio.
+
+### Haptics
+
+The match explosion buzzes on phones via `navigator.vibrate` — see
+[`src/haptics.ts`](./src/haptics.ts). Two rules keep it from turning into background noise:
+
+- **The pulse rides the burst, not the resolve.** The gems wind up for ~162 ms before they
+burst, and buzzing at resolve time meant the hit landed before the explosion it was meant to
+punctuate. The buzz is now fired from the same `onStart` callback that flashes the gems white,
+so it cannot drift from the explosion.
+- **One pulse per cascade step.** A step is either a plain match or a power-gem detonation,
+never both, so the pattern is chosen once and scaled by cascade depth.
+- **Heavier replaces, lighter yields.** Every `navigator.vibrate` call cancels the pattern still
+playing, so while one runs a lighter-or-equal pattern is dropped and a heavier one replaces it.
+- **Every on-pulse is at least `MIN_ON_MS` (40 ms).** Android motors need tens of ms to spin
+up; the old 18 ms tap was accepted and never felt. The playtest fails on anything shorter.
+
+If the browser refuses a call (`vibrate()` returns `false`: no tap yet, cross-origin iframe),
+the console logs `haptics: navigator.vibrate() was refused by the browser` once.
+
+Where it works: **Chrome-based Android browsers** (Chrome, Samsung Internet, Edge, Opera).
+Not iOS Safari or desktop (`navigator.vibrate` is absent). **Not Firefox for Android either**:
+since Firefox 79 it returns `true` but never vibrates (bugzil.la/1653318), so the game cannot
+even detect it. Chrome also blocks it inside cross-origin iframes, so open the game directly
+rather than in an embedding frame. The menu's `BUZZ ON/OFF` pill toggles it, the choice
+persists in `bejeweled.settings.v1`, and toggling it on fires a 50 ms confirm buzz
+(`Haptics.confirm()`).
 
 ## Deployment
 
