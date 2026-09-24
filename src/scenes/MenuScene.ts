@@ -16,6 +16,7 @@ import {
 } from '../config';
 import { loadSavedRun, loadSettings, saveSettings } from '../core/storage';
 import { VERSION_LABEL } from '../version';
+import { haptics } from '../haptics';
 import { sfx } from '../audio/sfx';
 import { Pill } from '../ui/pill';
 import { gemTextureKey } from '../gfx/gems';
@@ -30,6 +31,8 @@ export default class MenuScene extends Phaser.Scene {
   private bestText!: Phaser.GameObjects.Text;
   private resumePill?: Pill;
   private mutePill!: Pill;
+
+  private hapticPill!: Pill;
 
   constructor() {
     super('menu');
@@ -163,6 +166,7 @@ export default class MenuScene extends Phaser.Scene {
 
     const settings = loadSettings();
     sfx.muted = settings.muted;
+    haptics.enabled = settings.haptics;
     this.mutePill = new Pill(this, {
       x: GAME_WIDTH - 92,
       y: 54,
@@ -173,6 +177,20 @@ export default class MenuScene extends Phaser.Scene {
       fontSize: 16,
       radius: 14,
       onClick: () => this.toggleMute(),
+    });
+
+    // Sits alongside the sound toggle: two 130px pills with a 14px gap, ending at
+    // the same right margin as the sound pill.
+    this.hapticPill = new Pill(this, {
+      x: GAME_WIDTH - 92 - 130 - 14,
+      y: 54,
+      w: 130,
+      h: 52,
+      label: settings.haptics ? 'BUZZ ON' : 'BUZZ OFF',
+      variant: 'ghost',
+      fontSize: 16,
+      radius: 14,
+      onClick: () => this.toggleHaptics(),
     });
 
     this.selectMode(this.mode);
@@ -313,5 +331,16 @@ export default class MenuScene extends Phaser.Scene {
       sfx.unlock();
       sfx.click();
     }
+  }
+
+  private toggleHaptics(): void {
+    const settings = loadSettings();
+    settings.haptics = !settings.haptics;
+    saveSettings(settings);
+    haptics.enabled = settings.haptics;
+    this.hapticPill.setLabel(settings.haptics ? 'BUZZ ON' : 'BUZZ OFF');
+    // Fire one so the toggle demonstrates itself, and to unlock vibration on the
+    // user gesture where the platform requires it.
+    if (settings.haptics) haptics.unlock();
   }
 }

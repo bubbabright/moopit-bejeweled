@@ -43,6 +43,7 @@ import {
 } from '../core/storage';
 import { gemTextureKey } from '../gfx/gems';
 import { sfx } from '../audio/sfx';
+import { haptics } from '../haptics';
 import { Pill, tweenPromise } from '../ui/pill';
 import type { Cell, Grid, Move, Pos } from '../core/types';
 
@@ -140,6 +141,7 @@ export default class GameScene extends Phaser.Scene {
     this.settings = loadSettings();
     this.reduceMotion = this.settings.reducedMotion;
     sfx.muted = this.settings.muted;
+    haptics.enabled = this.settings.haptics;
 
     const saved = this.resumeRequested ? loadSavedRun() : null;
 
@@ -317,13 +319,18 @@ export default class GameScene extends Phaser.Scene {
 
     if (popIn && !this.reduceMotion) {
       sprite.setScale(BASE_SCALE * 1.7).setAlpha(0.15);
-      this.tweens.add({
-        targets: sprite,
-        scale: BASE_SCALE,
-        alpha: 1,
-        duration: TIMING.popMs,
-        ease: 'Back.easeOut',
-      });
+      // Held on the sprite so a movement tween can find and finish it. Keying it off
+      // the sprite also means it disappears with the sprite — no teardown bookkeeping.
+      sprite.setData('popTween',
+        this.tweens.add({
+          targets: sprite,
+          scale: BASE_SCALE,
+          alpha: 1,
+          duration: TIMING.popMs,
+          ease: 'Back.easeOut',
+          onComplete: () => sprite.setData('popTween', null),
+        }),
+      );
     } else if (popIn) {
       sprite.setScale(BASE_SCALE).setAlpha(1);
     }
@@ -356,6 +363,16 @@ export default class GameScene extends Phaser.Scene {
       if (!pos) continue;
       const { x, y } = this.cellCenter(pos);
       if (Math.abs(sprite.x - x) < 0.5 && Math.abs(sprite.y - y) < 0.5) continue;
+
+      // A freshly spawned power gem may still be mid pop-in, which starts it at
+      // alpha 0.15 and scale 1.7. Killing that tween to move the gem would freeze it
+      // oversized and see-through, so finish it first, then take over.
+      const pop = sprite.getData('popTween') as Phaser.Tweens.Tween | null | undefined;
+      if (pop) {
+        pop.stop();
+        sprite.setData('popTween', null);
+        sprite.setScale(BASE_SCALE).setAlpha(1);
+      }
 
       this.tweens.killTweensOf(sprite);
       const distanceTiles = Math.max(Math.abs(sprite.x - x), Math.abs(sprite.y - y)) / TILE;
@@ -1047,9 +1064,12 @@ export default class GameScene extends Phaser.Scene {
       this.showFloatingPoints(cleared, result.total, result.multiplier);
 
       sfx.match(depth);
+      haptics.match(depth);
       if (hypers > 0) sfx.hyper();
       if (bombs > 0) sfx.bomb();
       if (lines > 0) sfx.line();
+      // A power gem going off is a bigger bang than a plain match, so it lands harder.
+      if (lines + bombs + hypers > 0) haptics.detonation();
 
       const clearedPositions = [...cleared].map(parseKey);
       for (const pos of clearedPositions) {

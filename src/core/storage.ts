@@ -5,6 +5,8 @@ import type { Grid, SerializedGrid } from './types';
 export interface Settings {
   muted: boolean;
   reducedMotion: boolean;
+  /** Vibration on match explosions, where the platform supports it. */
+  haptics: boolean;
 }
 
 export interface HighScore {
@@ -42,6 +44,7 @@ export function systemPrefersReducedMotion(): boolean {
 export const defaultSettings = (): Settings => ({
   muted: false,
   reducedMotion: systemPrefersReducedMotion(),
+  haptics: true,
 });
 
 const read = <T>(key: string, fallback: T): T => {
@@ -72,6 +75,7 @@ export function loadSettings(): Settings {
     muted: typeof stored.muted === 'boolean' ? stored.muted : base.muted,
     reducedMotion:
       typeof stored.reducedMotion === 'boolean' ? stored.reducedMotion : base.reducedMotion,
+    haptics: typeof stored.haptics === 'boolean' ? stored.haptics : base.haptics,
   };
 }
 

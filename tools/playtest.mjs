@@ -118,6 +118,22 @@ const evaluate = async (expression) => {
 
 await send('Page.enable');
 await send('Runtime.enable');
+
+// Count vibration requests. This has to be installed before the page loads, because
+// src/haptics.ts decides whether the platform supports vibration when it initialises.
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: `
+    window.__vibes = [];
+    const record = (pattern) => { window.__vibes.push(pattern); return true; };
+    if (navigator.vibrate) {
+      navigator.vibrate = record;
+    } else {
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: record });
+    }
+    'ok';
+  `,
+});
+
 await send('Page.navigate', { url: BASE });
 await sleep(1500);
 
@@ -282,6 +298,42 @@ for (const [group, row] of Object.entries(menuRows)) {
   }
 }
 
+// The sound and haptics toggles share one row and are not part of the picker maps, so
+// audit them here for overlap and label overflow.
+const toggles = await evaluate(`
+  (() => {
+    const sc = window.gemfall.scene.getScene('menu');
+    const out = {};
+    for (const [name, pill] of [['buzz', sc.hapticPill], ['sound', sc.mutePill]]) {
+      if (!pill) { out[name] = null; continue; }
+      const texts = pill.list.filter((k) => k.type === 'Text').map((t) => Math.round(t.displayWidth));
+      out[name] = {
+        left: pill.x - pill.opts.w / 2,
+        right: pill.x + pill.opts.w / 2,
+        w: pill.opts.w,
+        widestText: texts.length ? Math.max(...texts) : 0,
+      };
+    }
+    return out;
+  })()
+`);
+if (toggles.buzz && toggles.sound) {
+  const gap = toggles.sound.left - toggles.buzz.right;
+  console.log(
+    `toggles: buzz=[${Math.round(toggles.buzz.left)},${Math.round(toggles.buzz.right)}] ` +
+      `sound=[${Math.round(toggles.sound.left)},${Math.round(toggles.sound.right)}] gap=${gap.toFixed(1)}`,
+  );
+  if (gap < 8) problems.push(`sound/haptics toggles overlap (gap ${gap.toFixed(1)}px)`);
+  for (const [name, t] of Object.entries(toggles)) {
+    if (t.left < 18) problems.push(`${name} toggle runs off the left edge (${Math.round(t.left)})`);
+    if (t.widestText > t.w - 16) {
+      problems.push(`${name} toggle label overflows (${t.widestText}px in ${t.w}px)`);
+    }
+  }
+} else {
+  problems.push('sound/haptics toggle pills not found');
+}
+
 /** Click a pill by its own declared centre and report what got selected. */
 const clickPillAndRead = async (sceneKey, group, name, readExpr) => {
   const centre = await evaluate(`
@@ -413,6 +465,106 @@ writeFileSync(
   JSON.stringify({ canvas: canvasInfo, menu: menuRows, game: gameGeometry }, null, 2),
 );
 console.log(`saved ${OUT_DIR}/geometry.json`);
+
+// ── sprite audit ─────────────────────────────────────────────────────────────
+//
+// Every gem sprite must be owned by exactly one grid cell, fully opaque, and not
+// tint-filled once the board has settled. A gem sprite that survived a clear would
+// linger on the board as a translucent ghost, so this is a correctness check, not
+// just tidiness.
+const spriteAudit = await evaluate(`
+  (() => {
+    const s = window.gemfall.scene.getScene('game');
+    const owned = new Set(s.spriteOf.values());
+    const gems = s.children.list.filter(
+      (o) => o.texture && /^(gem_|special_)/.test(o.texture.key),
+    );
+    const describe = (o) => ({
+      key: o.texture.key,
+      alpha: +o.alpha.toFixed(2),
+      scale: +(o.scaleX).toFixed(2),
+      at: [Math.round(o.x), Math.round(o.y)],
+      visible: o.visible,
+    });
+    const orphans = gems.filter((o) => !owned.has(o));
+    const faded = gems.filter((o) => owned.has(o) && o.alpha < 0.99);
+    const tinted = gems.filter((o) => o.tintFill);
+    return {
+      tracked: owned.size,
+      gems: gems.length,
+      orphans: orphans.map(describe),
+      faded: faded.map(describe),
+      tinted: tinted.map(describe),
+    };
+  })()
+`);
+console.log('sprite audit:', JSON.stringify({
+  tracked: spriteAudit.tracked,
+  gems: spriteAudit.gems,
+  orphans: spriteAudit.orphans.length,
+  faded: spriteAudit.faded.length,
+  tinted: spriteAudit.tinted.length,
+}));
+if (spriteAudit.orphans.length) console.log('  orphaned:', JSON.stringify(spriteAudit.orphans));
+if (spriteAudit.faded.length) console.log('  faded:', JSON.stringify(spriteAudit.faded));
+if (spriteAudit.tinted.length) console.log('  tint-filled:', JSON.stringify(spriteAudit.tinted));
+
+if (spriteAudit.orphans.length > 0) {
+  problems.push(`board has ${spriteAudit.orphans.length} orphaned gem sprite(s)`);
+}
+
+// Power gems are the only sprites created with a pop-in (they start at alpha 0.15 and
+// scale 1.7), and they are created immediately before gravity runs. If the movement
+// tween kills the pop-in, the gem stays oversized and translucent on the board — which
+// is the "power-ups look see-through" bug. Reproduce the interaction directly.
+const popInCheck = await evaluate(`
+  (async () => {
+    const s = window.gemfall.scene.getScene('game');
+    // Must reuse a cell that is actually in the grid: syncPositions skips any cell it
+    // has no board position for, so a synthetic cell would pass this test vacuously.
+    const pos = { row: 0, col: 0 };
+    const cell = s.grid[pos.row][pos.col];
+    if (!cell) return { error: 'no cell at origin' };
+    s.spriteOf.get(cell)?.destroy();
+    const sprite = s.createSprite(cell, pos, 0, true);   // enters its pop-in
+    const startAlpha = sprite.alpha;
+    const startScale = sprite.scaleX;
+    sprite.x += 200;                                     // force a movement, as a fall would
+    await s.syncPositions();
+    return {
+      startAlpha: +startAlpha.toFixed(2),
+      startScale: +startScale.toFixed(3),
+      endAlpha: +sprite.alpha.toFixed(2),
+      endScale: +sprite.scaleX.toFixed(3),
+    };
+  })()
+`);
+console.log(
+  `power-gem pop-in: starts alpha=${popInCheck.startAlpha}/scale=${popInCheck.startScale} -> ` +
+    `after a move alpha=${popInCheck.endAlpha}/scale=${popInCheck.endScale}`,
+);
+if (popInCheck.error) problems.push(`pop-in check could not run: ${popInCheck.error}`);
+if (popInCheck.endAlpha < 0.99) {
+  problems.push(
+    `power gem frozen mid pop-in (alpha ${popInCheck.endAlpha} after falling) — it will render see-through`,
+  );
+}
+if (spriteAudit.faded.length > 0) {
+  problems.push(`board has ${spriteAudit.faded.length} translucent gem sprite(s)`);
+}
+if (spriteAudit.tinted.length > 0) {
+  problems.push(`board has ${spriteAudit.tinted.length} tint-filled gem sprite(s)`);
+}
+
+// ── haptics ───────────────────────────────────────────────────────────────────
+//
+// The explosion should buzz. navigator.vibrate was stubbed before load, so this
+// proves the game actually requested a vibration while matches were clearing.
+const vibes = await evaluate('window.__vibes');
+const vibeCounts = Array.isArray(vibes) ? vibes.length : 0;
+console.log(`haptics: ${vibeCounts} vibration request(s) during play`);
+if (vibeCounts > 0) console.log(`  first few: ${JSON.stringify(vibes.slice(0, 4))}`);
+if (vibeCounts === 0) problems.push('no vibration requested on match explosions');
 
 // ── verdict ───────────────────────────────────────────────────────────────────
 
