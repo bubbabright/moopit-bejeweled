@@ -163,6 +163,23 @@ netlify deploy --prod --dir=dist
 Caching headers in `netlify.toml` are applied: hashed assets are `immutable`, `index.html` is
 `must-revalidate`. Both were confirmed on the live site.
 
+### Dashy tile (done)
+
+The **Gemfall** tile is live in the **Fun** section of `/srv/dashy/user-data/conf.yml` on
+`spaceguppy2`, alongside Thriller / Tetris / Snake:
+
+```yaml
+- title: Gemfall
+  description: Game
+  url: https://gemfall.moopit.fun/
+  icon: fas fa-gem
+  color: '#c7d2fe'
+```
+
+`conf.yml` was backed up to `conf.yml.bak-<timestamp>-pre-gemfall` before the edit and the
+Dashy service restarted afterwards. It stays `644 opc:opc` — an earlier Cloudflare 520 was
+caused by this file being `600`, which the container's non-root user cannot read.
+
 ### Still to do
 
 1. **Git-push auto-deploy (decision #4).** The repo is pushed to
@@ -176,15 +193,4 @@ Caching headers in `netlify.toml` are applied: hashed assets are `immutable`, `i
    **DNS-only** record to match how tetris and snake are exposed. Either set the record to
    DNS-only (grey cloud) so Netlify provisions its own certificate, or leave the proxy and make
    sure Cloudflare's SSL mode is *Full* rather than *Full (strict)*.
-3. **Dashy tile.** Add it to the **Fun** section of `/srv/dashy/user-data/conf.yml`:
 
-   ```yaml
-   - title: Gemfall
-     url: https://gemfall.moopit.fun/
-     target: newtab
-     icon: fa-gem
-     statusCheck: false
-   ```
-
-   Back the file up first as `conf.yml.bak-<timestamp>-pre-gemfall`, then restart the Dashy
-   container (convention from `../PLAN-dashy-public-deploy.md`).
