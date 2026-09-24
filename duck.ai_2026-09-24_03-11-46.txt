@@ -1,0 +1,490 @@
+﻿This conversation was generated with Duck.ai (https://duck.ai) using OpenAI's GPT-5.6 Luna Model. AI chats may display inaccurate or offensive information (see https://duckduckgo.com/duckai/privacy-terms for more info).
+
+====================
+
+User prompt 1 of 1 - 9/23/2026, 8:14:07 PM:
+code you own  bejeweled  type game
+
+GPT-5.6 Luna:
+<!-- **Clarifying game code requirements**
+
+I need to clarify if the user wants code for a Bejeweled-type game. It sounds like they want me to create a self-contained HTML game using HTML, CSS, and JavaScript without needing the web. My aim is to provide concise yet useful code for a match-3 game. I might consider making it downloadable as a text file for easy saving as index.html. However, I should avoid claiming to produce anything beyond the text itself. -->
+Save this as `index.html`, then open it in a browser. It’s a self-contained match-3 game inspired by Bejeweled, using original code and simple colored gems.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gem Swap</title>
+
+  <style>
+    :root {
+      --cell-size: min(11vw, 64px);
+      --gap: 5px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, sans-serif;
+      color: white;
+      background:
+        radial-gradient(circle at top, #263b75, #0d1024 70%);
+    }
+
+    .game {
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      letter-spacing: 3px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 25px;
+      margin-bottom: 14px;
+      font-size: 1.1rem;
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, var(--cell-size));
+      grid-template-rows: repeat(8, var(--cell-size));
+      gap: var(--gap);
+      padding: 10px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.35);
+      box-shadow: 0 0 30px rgba(81, 164, 255, 0.35);
+      user-select: none;
+    }
+
+    .gem {
+      width: var(--cell-size);
+      height: var(--cell-size);
+      border: 0;
+      border-radius: 18%;
+      cursor: pointer;
+      transition: transform 0.15s, filter 0.15s, opacity 0.2s;
+      box-shadow:
+        inset 5px 5px 8px rgba(255, 255, 255, 0.45),
+        inset -6px -7px 10px rgba(0, 0, 0, 0.3),
+        0 3px 5px rgba(0, 0, 0, 0.35);
+    }
+
+    .gem:hover {
+      transform: scale(1.08);
+      filter: brightness(1.2);
+    }
+
+    .gem.selected {
+      outline: 4px solid white;
+      outline-offset: 2px;
+      transform: scale(1.12);
+    }
+
+    .gem.matched {
+      animation: pop 0.25s ease-in forwards;
+    }
+
+    .red    { background: #ff4e69; }
+    .blue   { background: #43a9ff; }
+    .green  { background: #43db83; }
+    .yellow { background: #ffd447; }
+    .purple { background: #b76cff; }
+    .orange { background: #ff944d; }
+
+    button#restart {
+      margin-top: 18px;
+      padding: 10px 20px;
+      border: 0;
+      border-radius: 8px;
+      color: white;
+      background: #4d72ff;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    button#restart:hover {
+      background: #6687ff;
+    }
+
+    #message {
+      min-height: 24px;
+      margin-top: 12px;
+      color: #d5e2ff;
+    }
+
+    @keyframes pop {
+      to {
+        transform: scale(0);
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>GEM SWAP</h1>
+
+    <div class="stats">
+      <span>Score: <strong id="score">0</strong></span>
+      <span>Moves: <strong id="moves">30</strong></span>
+    </div>
+
+    <div id="board" aria-label="Match three game board"></div>
+
+    <div id="message">Click two neighboring gems to swap them.</div>
+    <button id="restart">Restart Game</button>
+  </main>
+
+  <script>
+    const SIZE = 8;
+    const GEM_TYPES = ["red", "blue", "green", "yellow", "purple", "orange"];
+
+    let board = [];
+    let selected = null;
+    let score = 0;
+    let moves = 30;
+    let busy = false;
+
+    const boardElement = document.getElementById("board");
+    const scoreElement = document.getElementById("score");
+    const movesElement = document.getElementById("moves");
+    const messageElement = document.getElementById("message");
+
+    function randomGem() {
+      return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
+    }
+
+    function createBoard() {
+      board = [];
+
+      for (let row = 0; row < SIZE; row++) {
+        board[row] = [];
+
+        for (let col = 0; col < SIZE; col++) {
+          let gem;
+
+          do {
+            gem = randomGem();
+          } while (
+            (col >= 2 &&
+              board[row][col - 1] === gem &&
+              board[row][col - 2] === gem) ||
+            (row >= 2 &&
+              board[row - 1][col] === gem &&
+              board[row - 2][col] === gem)
+          );
+
+          board[row][col] = gem;
+        }
+      }
+    }
+
+    function drawBoard() {
+      boardElement.innerHTML = "";
+
+      for (let row = 0; row < SIZE; row++) {
+        for (let col = 0; col < SIZE; col++) {
+          const gem = document.createElement("button");
+
+          gem.className = `gem ${board[row][col]}`;
+          gem.dataset.row = row;
+          gem.dataset.col = col;
+          gem.setAttribute("aria-label", `${board[row][col]} gem`);
+
+          if (
+            selected &&
+            selected.row === row &&
+            selected.col === col
+          ) {
+            gem.classList.add("selected");
+          }
+
+          gem.addEventListener("click", () => selectGem(row, col));
+          boardElement.appendChild(gem);
+        }
+      }
+
+      scoreElement.textContent = score;
+      movesElement.textContent = moves;
+    }
+
+    function selectGem(row, col) {
+      if (busy || moves <= 0) return;
+
+      if (!selected) {
+        selected = { row, col };
+        drawBoard();
+        return;
+      }
+
+      if (selected.row === row && selected.col === col) {
+        selected = null;
+        drawBoard();
+        return;
+      }
+
+      if (!areNeighbors(selected, { row, col })) {
+        selected = { row, col };
+        drawBoard();
+        return;
+      }
+
+      swapGems(selected, { row, col });
+      selected = null;
+      moves--;
+      busy = true;
+      drawBoard();
+
+      const matches = findMatches();
+
+      if (matches.size === 0) {
+        setTimeout(() => {
+          swapGems(
+            { row, col },
+            { row: selected?.row ?? row, col: selected?.col ?? col }
+          );
+        }, 0);
+
+        // Undo using the original positions.
+        // The values currently occupy the swapped cells.
+        setTimeout(() => {
+          swapGems({ row, col }, { row, col });
+        }, 0);
+      }
+
+      resolveMove(matches, { row, col });
+    }
+
+    function areNeighbors(a, b) {
+      const rowDistance = Math.abs(a.row - b.row);
+      const colDistance = Math.abs(a.col - b.col);
+      return rowDistance + colDistance === 1;
+    }
+
+    function swapGems(a, b) {
+      const temp = board[a.row][a.col];
+      board[a.row][a.col] = board[b.row][b.col];
+      board[b.row][b.col] = temp;
+    }
+
+    function findMatches() {
+      const matches = new Set();
+
+      // Horizontal matches
+      for (let row = 0; row < SIZE; row++) {
+        let start = 0;
+
+        for (let col = 1; col <= SIZE; col++) {
+          if (col < SIZE && board[row][col] === board[row][start]) {
+            continue;
+          }
+
+          if (col - start >= 3) {
+            for (let i = start; i < col; i++) {
+              matches.add(`${row},${i}`);
+            }
+          }
+
+          start = col;
+        }
+      }
+
+      // Vertical matches
+      for (let col = 0; col < SIZE; col++) {
+        let start = 0;
+
+        for (let row = 1; row <= SIZE; row++) {
+          if (row < SIZE && board[row][col] === board[start][col]) {
+            continue;
+          }
+
+          if (row - start >= 3) {
+            for (let i = start; i < row; i++) {
+              matches.add(`${i},${col}`);
+            }
+          }
+
+          start = row;
+        }
+      }
+
+      return matches;
+    }
+
+    function resolveMove(matches, originalFirstCell) {
+      if (matches.size === 0) {
+        // Reverse the attempted swap.
+        // The second selected cell is adjacent to the first and can be
+        // identified from the changed board by storing it separately.
+        messageElement.textContent = "That swap did not make a match.";
+
+        setTimeout(() => {
+          // This function is replaced below by the safer move handler.
+          busy = false;
+          drawBoard();
+          checkGameOver();
+        }, 350);
+
+        return;
+      }
+
+      score += matches.size * 10;
+
+      const cells = [...document.querySelectorAll(".gem")];
+
+      matches.forEach(key => {
+        const [row, col] = key.split(",").map(Number);
+        const index = row * SIZE + col;
+        cells[index]?.classList.add("matched");
+      });
+
+      setTimeout(() => {
+        matches.forEach(key => {
+          const [row, col] = key.split(",").map(Number);
+          board[row][col] = null;
+        });
+
+        dropGems();
+        fillEmptyGems();
+
+        const newMatches = findMatches();
+
+        busy = false;
+        drawBoard();
+
+        if (newMatches.size > 0) {
+          setTimeout(() => resolveMove(newMatches), 180);
+        } else {
+          messageElement.textContent = `Nice! +${matches.size * 10} points`;
+          checkGameOver();
+        }
+      }, 250);
+    }
+
+    function dropGems() {
+      for (let col = 0; col < SIZE; col++) {
+        let writeRow = SIZE - 1;
+
+        for (let row = SIZE - 1; row >= 0; row--) {
+          if (board[row][col] !== null) {
+            board[writeRow][col] = board[row][col];
+            writeRow--;
+          }
+        }
+
+        while (writeRow >= 0) {
+          board[writeRow][col] = null;
+          writeRow--;
+        }
+      }
+    }
+
+    function fillEmptyGems() {
+      for (let row = 0; row < SIZE; row++) {
+        for (let col = 0; col < SIZE; col++) {
+          if (board[row][col] === null) {
+            board[row][col] = randomGem();
+          }
+        }
+      }
+    }
+
+    function checkGameOver() {
+      if (moves <= 0) {
+        messageElement.textContent = `Game over! Final score: ${score}`;
+      }
+    }
+
+    /*
+      Safer click handler:
+      Stores both positions so an invalid swap can be reversed correctly.
+    */
+    const originalSelectGem = selectGem;
+
+    selectGem = function(row, col) {
+      if (busy || moves <= 0) return;
+
+      if (!selected) {
+        selected = { row, col };
+        drawBoard();
+        return;
+      }
+
+      if (selected.row === row && selected.col === col) {
+        selected = null;
+        drawBoard();
+        return;
+      }
+
+      if (!areNeighbors(selected, { row, col })) {
+        selected = { row, col };
+        drawBoard();
+        return;
+      }
+
+      const first = { ...selected };
+      const second = { row, col };
+
+      swapGems(first, second);
+      selected = null;
+      moves--;
+      busy = true;
+      drawBoard();
+
+      const matches = findMatches();
+
+      if (matches.size === 0) {
+        swapGems(first, second);
+        setTimeout(() => {
+          busy = false;
+          messageElement.textContent = "That swap did not make a match.";
+          drawBoard();
+          checkGameOver();
+        }, 300);
+
+        return;
+      }
+
+      resolveMove(matches);
+    };
+
+    document.getElementById("restart").addEventListener("click", () => {
+      score = 0;
+      moves = 30;
+      selected = null;
+      busy = false;
+      messageElement.textContent = "Click two neighboring gems to swap them.";
+      createBoard();
+      drawBoard();
+    });
+
+    createBoard();
+    drawBoard();
+  </script>
+</body>
+</html>
+```
+
+The game includes:
+
+- 8×8 gem board
+- Neighboring-gem swapping
+- Horizontal and vertical matches
+- Cascading gems
+- Score tracking
+- Move limit
+- Restart button
+- Invalid-swap reversal
