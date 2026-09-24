@@ -113,12 +113,23 @@ class Sfx {
     this.tone({ freq: 196, dur: 0.16, type: 'square', gain: 0.12, delay: 0.02 });
   }
 
-  /** Cascade-depth aware: each step climbs a couple of semitones. */
+  /**
+   * Cascade-depth aware: each step climbs a couple of semitones and hits a little
+   * harder. A filtered noise burst supplies the explosion transient, so a clear
+   * sounds like something breaking rather than a single blip.
+   */
   match(depth: number): void {
     const step = Math.min(depth, 8);
     const base = 523.25 * Math.pow(2, (step * 2) / 12);
-    this.tone({ freq: base, dur: 0.14, type: 'triangle', gain: 0.36 });
-    this.tone({ freq: base * 2, dur: 0.1, type: 'sine', gain: 0.16, delay: 0.02 });
+    const punch = Math.min(0.12, step * 0.014);
+
+    // Transient: bandpass noise sweeping down = the "crack" of the burst.
+    this.noise(0.26, 0.18 + punch, 2800, 260);
+    // Body: the pitched part glides down as the gems fly apart.
+    this.tone({ freq: base, dur: 0.2, type: 'triangle', gain: 0.34, sweepTo: base * 0.62 });
+    this.tone({ freq: base * 2, dur: 0.12, type: 'sine', gain: 0.16, delay: 0.02 });
+    // Weight: a short low thump gives the pop some body.
+    this.tone({ freq: 110, dur: 0.22, type: 'sine', gain: 0.13 + punch * 0.5, sweepTo: 50 });
   }
 
   line(): void {

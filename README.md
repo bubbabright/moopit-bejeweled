@@ -4,9 +4,11 @@ An original browser match-3 game — swap gems, build cascades, forge power gems
 Phaser 3 + Vite + TypeScript. No third-party game code or art: the gems, board, UI and sound
 effects are all generated procedurally.
 
-Target: a public POC at **`https://bejeweled.moopit.fun`**, listed in the **Fun** section of the
-Dashy dashboard at `moopit.fun`. The approved design (modes, scoring, art contract, deployment
-steps) lives in [`bejeweled-spec.md`](./bejeweled-spec.md) — that file is the source of truth.
+Live at **<https://gemfall.moopit.fun>**, hosted on Netlify. Still outstanding: the **Fun** tile
+on the Dashy dashboard at `moopit.fun`, and git-push auto-deploy (decision #4).
+
+The approved design (modes, scoring, art contract, deployment steps) lives in
+[`bejeweled-spec.md`](./bejeweled-spec.md) — that file is the source of truth.
 
 ## Playing it right now (POC on this laptop)
 
@@ -99,6 +101,10 @@ the playtest cannot assert numerically: the menu really renders as three separat
 with their hit boxes, and the board really renders 64 occupied cells with 6 distinct gem colours.
 It uses the geometry the playtest recorded rather than guessing where the canvas is.
 
+The playtest also guards **animation readability**: it asserts that at least one move spent
+≥600 ms of game time animating. Matches and falls are meant to be seen, so a regression back to
+instant clears fails this gate.
+
 > A WebGL canvas cannot be read back via `drawImage` in headless Chromium, which is why the
 > visual gate works on `Page.captureScreenshot` output analysed offline instead.
 
@@ -142,18 +148,43 @@ The procedural art is a stand-in for real assets and already matches the final c
 - Audio overrides go in `assets/sfx/*.ogg`, keyed by the same event names as the procedural
   engine. No audio files ship today; all sound is synthesised with WebAudio.
 
-## Deploying (follow-on, not done yet)
+## Deployment
 
-The site is not deployed. When it is, per spec §9:
+Live at **<https://gemfall.moopit.fun>**, serving the Netlify project `moopit-bejeweled`
+(team `bubbAlab`, account slug `bubbabright`).
 
-1. Push the repo; Netlify builds with `npm run build` and publishes `dist/`.
-2. DNS: add a `bejeweled` CNAME pointing at the Netlify subdomain. Netlify provisions the
-   Let's Encrypt certificate automatically. No Cloudflare proxy or Access gate — matching how
-   the tetris and snake sites are exposed.
-3. Add the Dashy tile in the **Fun** section of `/srv/dashy/user-data/conf.yml`
-   (`title: Bejeweled`, `url: https://bejeweled.moopit.fun/`, `target: newtab`,
-   icon `fa-gem`, `statusCheck: false`), then restart the Dashy container. Back `conf.yml` up
-   first, as `conf.yml.bak-<timestamp>-pre-bejeweled`.
+Deploy a new build:
 
-Caching headers in `netlify.toml` are already set: hashed assets are `immutable`, `index.html`
-is `must-revalidate`.
+```bash
+npm run build
+netlify deploy --prod --dir=dist
+```
+
+Caching headers in `netlify.toml` are applied: hashed assets are `immutable`, `index.html` is
+`must-revalidate`. Both were confirmed on the live site.
+
+### Still to do
+
+1. **Git-push auto-deploy (decision #4).** The repo is pushed to
+   `github.com/bubbabright/moopit-bejeweled`, but continuous deployment is *not* wired up yet —
+   `netlify init` needs an interactive GitHub authorisation grant that cannot be completed from
+   a non-interactive shell. Run `netlify init` in this directory and choose
+   *Authorize with GitHub through app.netlify.com*. Deploys are manual until then.
+2. **Cloudflare proxy.** DNS for `gemfall.moopit.fun` is Cloudflare-proxied, which is why
+   Netlify reports `ssl: false` for the custom domain — Cloudflare terminates TLS at the edge
+   with its `*.moopit.fun` certificate, so visitors still get HTTPS. Spec §9 asked for a
+   **DNS-only** record to match how tetris and snake are exposed. Either set the record to
+   DNS-only (grey cloud) so Netlify provisions its own certificate, or leave the proxy and make
+   sure Cloudflare's SSL mode is *Full* rather than *Full (strict)*.
+3. **Dashy tile.** Add it to the **Fun** section of `/srv/dashy/user-data/conf.yml`:
+
+   ```yaml
+   - title: Gemfall
+     url: https://gemfall.moopit.fun/
+     target: newtab
+     icon: fa-gem
+     statusCheck: false
+   ```
+
+   Back the file up first as `conf.yml.bak-<timestamp>-pre-gemfall`, then restart the Dashy
+   container (convention from `../PLAN-dashy-public-deploy.md`).

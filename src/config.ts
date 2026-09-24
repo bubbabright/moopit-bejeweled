@@ -137,9 +137,25 @@ export const SCORE = {
 // ── Timing / feel ─────────────────────────────────────────────────────────────
 export const TIMING = {
   swapMs: 130,
+  /**
+   * Match-clear explosion for the first cascade step. Long enough to actually read
+   * as a hit: the gems inhale, flash, then burst outward while sparks fly.
+   */
+  clearMs: 900,
+  /** Floor for deep cascades, so a long chain does not drag on for seconds. */
+  clearMinMs: 300,
+  /** Each cascade step past the first scales the clear by this factor. */
+  cascadeRamp: 0.78,
+  /** Power-gem spawn pop-in. */
   popMs: 190,
-  fallMsPerTile: 55,
-  fallMinMs: 120,
+  /**
+   * Falling gems. Acceleration is what sells this as gravity rather than a slide,
+   * so these are deliberately slow enough to follow with the eye.
+   */
+  fallMsPerTile: 120,
+  fallMinMs: 220,
+  /** Landing squash once a falling gem arrives. */
+  settleMs: 130,
   spawnMs: 260,
   rejectMs: 140,
   hintPulseMs: 620,

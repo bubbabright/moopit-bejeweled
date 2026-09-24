@@ -349,6 +349,7 @@ export default class GameScene extends Phaser.Scene {
   ): Promise<void> {
     this.rebuildPosIndex();
     const work: Promise<void>[] = [];
+    const landed: Phaser.GameObjects.Sprite[] = [];
 
     for (const [cell, sprite] of this.spriteOf) {
       const pos = this.posOf.get(cell);
@@ -375,12 +376,30 @@ export default class GameScene extends Phaser.Scene {
           x,
           y,
           duration,
-          ease: isSwap ? 'Sine.easeInOut' : 'Quad.easeIn',
+          // Gravity accelerates; a swap is smooth in both directions.
+          ease: isSwap ? 'Sine.easeInOut' : 'Cubic.easeIn',
         }),
       );
+      if (!isSwap) landed.push(sprite);
     }
 
     await Promise.all(work);
+
+    // A short squash on landing is what makes pieces read as falling into place
+    // instead of sliding or snapping to their cell.
+    if (!isSwap && !this.reduceMotion && landed.length > 0) {
+      await Promise.all(
+        landed.map((sprite) =>
+          tweenPromise(this, {
+            targets: sprite,
+            scaleY: BASE_SCALE * 0.82,
+            duration: TIMING.settleMs * 0.42,
+            yoyo: true,
+            ease: 'Quad.easeOut',
+          }),
+        ),
+      );
+    }
   }
 
   private burst(pos: Pos, type: number, count: number): void {
@@ -389,11 +408,13 @@ export default class GameScene extends Phaser.Scene {
     const tint = type >= 0 ? GEM_COLORS[type % GEM_COLORS.length] : 0xffffff;
 
     const emitter = this.add.particles(x, y, 'spark', {
-      speed: { min: 70, max: 260 },
-      lifespan: { min: 260, max: 620 },
-      scale: { start: 0.5, end: 0 },
+      speed: { min: 130, max: 430 },
+      lifespan: { min: 340, max: 780 },
+      scale: { start: 0.72, end: 0 },
       alpha: { start: 0.95, end: 0 },
       blendMode: 'ADD',
+      // Sparks arc downward, which reads as debris rather than a puff of smoke.
+      gravityY: 260,
       tint,
       emitting: false,
     });
@@ -1033,11 +1054,11 @@ export default class GameScene extends Phaser.Scene {
       const clearedPositions = [...cleared].map(parseKey);
       for (const pos of clearedPositions) {
         const cell = this.grid[pos.row]?.[pos.col];
-        this.burst(pos, cell ? cell.type : -1, 5 + Math.min(6, depth));
+        this.burst(pos, cell ? cell.type : -1, 8 + Math.min(10, depth * 2));
       }
       if (!this.reduceMotion && clearedPositions.length > 4) this.cameras.main.shake(140, 0.0035);
 
-      await this.animateClear(clearedPositions);
+      await this.animateClear(clearedPositions, depth);
 
       // Created power gems replace the cells they spawned in.
       for (const spawn of spawns) {
@@ -1064,7 +1085,20 @@ export default class GameScene extends Phaser.Scene {
     this.cascadeDepth = 0;
   }
 
-  private async animateClear(cells: Pos[]): Promise<void> {
+  /**
+   * Blow a matched group apart.
+   *
+   * Three beats, so a clear reads as a hit rather than a blink: the gems inhale
+   * (squash inward), flash white, then burst outward and vanish. Deeper cascades
+   * run the same animation faster so a long chain stays snappy.
+   */
+  private async animateClear(cells: Pos[], depth = 1): Promise<void> {
+    const total = Math.max(
+      TIMING.clearMinMs,
+      TIMING.clearMs * Math.pow(TIMING.cascadeRamp, Math.max(0, depth - 1)),
+    );
+    const inhaleMs = total * 0.18;
+    const explodeMs = total - inhaleMs;
     const work: Promise<void>[] = [];
 
     for (const pos of cells) {
@@ -1078,22 +1112,38 @@ export default class GameScene extends Phaser.Scene {
         continue;
       }
 
+      this.tweens.killTweensOf(sprite);
+
+      // 1. Inhale — pull inward, winding up.
       work.push(
         tweenPromise(this, {
           targets: sprite,
-          scale: BASE_SCALE * 1.4,
-          duration: TIMING.popMs * 0.45,
-          ease: 'Quad.easeOut',
+          scale: BASE_SCALE * 0.78,
+          duration: inhaleMs,
+          ease: 'Quad.easeIn',
+        }),
+      );
+
+      // 2. Flash white as it lets go, so the burst has a bright frame.
+      // 3. Explode outward while fading out; both finish together.
+      work.push(
+        tweenPromise(this, {
+          targets: sprite,
+          alpha: 0,
+          duration: explodeMs,
+          delay: inhaleMs,
+          ease: 'Quad.easeIn',
+          // tweenPromise owns onComplete, so hook the flash on start instead.
+          onStart: () => sprite.setTintFill(0xffffff),
         }),
       );
       work.push(
         tweenPromise(this, {
           targets: sprite,
-          alpha: 0,
-          scale: BASE_SCALE * 0.15,
-          duration: TIMING.popMs * 0.55,
-          delay: TIMING.popMs * 0.45,
-          ease: 'Quad.easeIn',
+          scale: BASE_SCALE * 1.9,
+          duration: explodeMs,
+          delay: inhaleMs,
+          ease: 'Back.easeOut',
         }),
       );
     }

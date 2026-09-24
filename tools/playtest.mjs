@@ -343,6 +343,8 @@ if (hudRows.hud) {
 // ── play real moves ───────────────────────────────────────────────────────────
 
 let movesPlayed = 0;
+/** Game-time (ms) each move spent animating, for the "clears are readable" check. */
+const moveAnimMs = [];
 for (let attempt = 0; attempt < 10; attempt++) {
   // Ask the game itself for a legal move, then click both of its cells.
   const hint = await evaluate(`
@@ -366,16 +368,23 @@ for (let attempt = 0; attempt < 10; attempt++) {
   await pump(6);
   await click(hint.bx, hint.by);
 
-  // Let the cascade play out.
-  for (let i = 0; i < 40; i++) {
+  // Let the cascade play out. A single clear animation is TIMING.clearMs (900ms)
+  // and a chain stacks several of them plus falls, so allow a generous window.
+  // The loop exits as soon as the scene reports idle.
+  let busyFrames = 0;
+  for (let i = 0; i < 120; i++) {
     await pump(6);
+    busyFrames += 6;
     const state = await sceneState();
     if (!state.busy) break;
   }
+  moveAnimMs.push(busyFrames * 16.7);
 
   movesPlayed += 1;
   const state = await sceneState();
-  console.log(`move ${movesPlayed}: score=${state.score} movesLeft=${state.movesLeft} gems=${state.gems} sprites=${state.sprites}`);
+  console.log(
+    `move ${movesPlayed}: score=${state.score} movesLeft=${state.movesLeft} gems=${state.gems} sprites=${state.sprites} anim=${Math.round(busyFrames * 16.7)}ms`,
+  );
 
   if (state.over) break;
 }
@@ -414,9 +423,21 @@ if (finalState.gems !== 64) problems.push(`board is not full (${finalState.gems}
 if (finalState.sprites !== finalState.gems) problems.push(`sprite/grid mismatch (${finalState.sprites} vs ${finalState.gems})`);
 if (consoleErrors.length > 0) problems.push(`browser errors: ${consoleErrors.join(' | ')}`);
 
+// Feedback regression guard: matches must be visibly destroyed, not blinked away.
+// A clear runs TIMING.clearMs plus the fall and settle that follow it, so a real
+// move can never resolve in a couple of frames.
+const slowestMoveMs = moveAnimMs.length > 0 ? Math.max(...moveAnimMs) : 0;
+console.log(`animation time per move (ms): ${moveAnimMs.map((v) => Math.round(v)).join(', ')}`);
+if (slowestMoveMs < 600) {
+  problems.push(
+    `clears resolve too fast to read (slowest move ${Math.round(slowestMoveMs)}ms, expected >= 600ms)`,
+  );
+}
+
 console.log('\n--- playtest report ---');
 console.log(`screenshots: ${OUT_DIR}/menu.png, ${OUT_DIR}/game-start.png, ${screenshotPath}`);
 console.log(`moves played: ${movesPlayed}, score: ${finalState.score}, movesLeft: ${finalState.movesLeft}`);
+console.log(`slowest move animation: ${Math.round(slowestMoveMs)}ms`);
 if (problems.length === 0) {
   console.log('PLAYTEST PASS');
 } else {
