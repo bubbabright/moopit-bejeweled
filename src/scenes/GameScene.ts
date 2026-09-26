@@ -3,8 +3,6 @@ import {
   DIFFICULTIES,
   FONT,
   MESSAGE_FONT,
-  GAME_HEIGHT,
-  GAME_WIDTH,
   GEM_COLORS,
   MODES,
   MODE_RULES,
@@ -12,7 +10,6 @@ import {
   SWIPE_THRESHOLD,
   TEX_SIZE,
   TIMING,
-  TILE,
   type Difficulty,
   type DifficultySpec,
   type Mode,
@@ -48,17 +45,28 @@ import { sfx } from '../audio/sfx';
 import { haptics } from '../haptics';
 import { Pill, tweenPromise } from '../ui/pill';
 import type { Cell, Grid, Move, Pos } from '../core/types';
+import {
+  BOARD_AREA_H,
+  BOARD_PAD,
+  BOARD_TOP,
+  GAME_HEIGHT,
+  LAYOUT,
+  TILE,
+  WORLD_WIDTH,
+  useRenderZoom,
+  type HudSpot,
+} from '../layout';
 
-const BOARD_TOP = 196;
-const BOARD_AREA_H = 584;
-const BOARD_PAD = 14;
+// These follow the current layout (src/layout.ts), which changes when the phone turns, so they
+// are read when used rather than fixed when the module loads.
 /** Board centre: where the combo popup and the level banner land. */
-const COMBO_Y = BOARD_TOP + BOARD_AREA_H / 2;
+const comboY = (): number => BOARD_TOP + BOARD_AREA_H / 2;
 /** The personal voice's word under the combo number, just below it. */
-const COMBO_NOTE_Y = COMBO_Y + 54;
+const comboNoteY = (): number => comboY() + 54;
 /** Toast line, clear of the combo flourish above it and still over the board. */
-const TOAST_Y = COMBO_Y + 108;
-const BASE_SCALE = TILE / TEX_SIZE;
+const toastY = (): number => comboY() + 108;
+/** Scale that shows a TEX_SIZE gem texture at the current tile size. */
+const baseScale = (): number => TILE / TEX_SIZE;
 const D = { slots: 1, gems: 5, ring: 8, fx: 12, hud: 20, overlay: 60 };
 
 const TIER_COLORS = ['#ffffff', '#a7f3d0', '#fde68a', '#fca5a5', '#f0abfc'];
@@ -67,6 +75,11 @@ export interface GameSceneData {
   mode?: Mode;
   difficulty?: Difficulty;
   resume?: boolean;
+  /**
+   * Set when the scene restarts itself because the phone turned (see `relayout`): the exact
+   * shuffle count and pause state to carry over, which the saved run doesn't hold precisely.
+   */
+  carry?: { shufflesLeft: number; paused: boolean };
 }
 
 export default class GameScene extends Phaser.Scene {
@@ -148,15 +161,37 @@ export default class GameScene extends Phaser.Scene {
     this.difficulty = data.difficulty ?? 'normal';
     this.spec = DIFFICULTIES[this.difficulty];
     this.resumeRequested = Boolean(data.resume);
+    this.carry = data.carry ?? null;
   }
 
   private resumeRequested = false;
+  private carry: GameSceneData['carry'] | null = null;
+
+  /**
+   * The phone turned: rebuild in the new layout without losing the run. The run is saved and
+   * the scene restarts from it, keeping shuffles and pause exactly. Returns false when now is
+   * not a safe moment (gems still moving); the caller tries again shortly. After game over there
+   * is no run to carry, so the new layout waits until the player leaves this screen.
+   */
+  relayout(): boolean {
+    if (this.over) return true;
+    if (!this.ready || this.busy) return false;
+    this.persistRun();
+    this.scene.restart({
+      mode: this.mode,
+      difficulty: this.difficulty,
+      resume: true,
+      carry: { shufflesLeft: this.shufflesLeft, paused: this.paused },
+    } satisfies GameSceneData);
+    return true;
+  }
 
   private get voice(): Voice {
     return voiceFor(this.moopit);
   }
 
   create(): void {
+    useRenderZoom(this);
     this.resetInstanceState();
     this.settings = loadSettings();
     this.reduceMotion = this.settings.reducedMotion;
@@ -172,7 +207,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.boardW = this.spec.cols * TILE;
     this.boardH = this.spec.rows * TILE;
-    this.boardX = Math.round((GAME_WIDTH - this.boardW) / 2);
+    this.boardX = Math.round((WORLD_WIDTH - this.boardW) / 2);
     this.boardY = Math.round(BOARD_TOP + (BOARD_AREA_H - this.boardH) / 2);
 
     this.movesLeft =
@@ -188,6 +223,7 @@ export default class GameScene extends Phaser.Scene {
       this.timeLeftMs = saved.timeLeftMs >= 0 ? saved.timeLeftMs : Number.POSITIVE_INFINITY;
       this.shufflesLeft =
         this.mode === 'endless' ? Math.max(1, MODE_RULES.endlessShuffles - saved.shuffles) : Number.POSITIVE_INFINITY;
+      if (this.carry) this.shufflesLeft = this.carry.shufflesLeft;
     }
 
     this.drawBoard();
@@ -204,6 +240,8 @@ export default class GameScene extends Phaser.Scene {
 
     this.playIntroFade();
     this.ready = true;
+    // Rebuilt after the phone turned while paused: stay paused.
+    if (this.carry?.paused) this.togglePause(true);
 
     if (this.mode === 'endless' && !saved) {
       this.showToast(this.voice.toast.endlessStart(MODE_RULES.endlessShuffles), '#c7d2fe');
@@ -218,7 +256,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.reduceMotion) return;
 
     const fade = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x080418, 1)
+      .rectangle(WORLD_WIDTH / 2, GAME_HEIGHT / 2, WORLD_WIDTH, GAME_HEIGHT, 0x080418, 1)
       .setDepth(D.overlay - 5);
     this.fadeRect = fade;
 
@@ -331,7 +369,7 @@ export default class GameScene extends Phaser.Scene {
     const { x, y } = this.cellCenter(pos);
     const sprite = this.add
       .sprite(x, y - rowsAbove * TILE, gemTextureKey(cell.type, cell.special))
-      .setScale(BASE_SCALE)
+      .setScale(baseScale())
       .setDepth(D.gems);
 
     if (cell.special === 'lineV') sprite.setAngle(90);
@@ -339,13 +377,13 @@ export default class GameScene extends Phaser.Scene {
     this.spriteOf.set(cell, sprite);
 
     if (popIn && !this.reduceMotion) {
-      sprite.setScale(BASE_SCALE * 1.7).setAlpha(0.15);
+      sprite.setScale(baseScale() * 1.7).setAlpha(0.15);
       // Held on the sprite so a movement tween can find and finish it. Keying it off
       // the sprite also means it disappears with the sprite — no teardown bookkeeping.
       sprite.setData('popTween',
         this.tweens.add({
           targets: sprite,
-          scale: BASE_SCALE,
+          scale: baseScale(),
           alpha: 1,
           duration: TIMING.popMs,
           ease: 'Back.easeOut',
@@ -353,7 +391,7 @@ export default class GameScene extends Phaser.Scene {
         }),
       );
     } else if (popIn) {
-      sprite.setScale(BASE_SCALE).setAlpha(1);
+      sprite.setScale(baseScale()).setAlpha(1);
     }
 
     return sprite;
@@ -392,7 +430,7 @@ export default class GameScene extends Phaser.Scene {
       if (pop) {
         pop.stop();
         sprite.setData('popTween', null);
-        sprite.setScale(BASE_SCALE).setAlpha(1);
+        sprite.setScale(baseScale()).setAlpha(1);
       }
 
       this.tweens.killTweensOf(sprite);
@@ -430,7 +468,7 @@ export default class GameScene extends Phaser.Scene {
         landed.map((sprite) =>
           tweenPromise(this, {
             targets: sprite,
-            scaleY: BASE_SCALE * 0.82,
+            scaleY: baseScale() * 0.82,
             duration: TIMING.settleMs * 0.42,
             yoyo: true,
             ease: 'Quad.easeOut',
@@ -469,74 +507,52 @@ export default class GameScene extends Phaser.Scene {
 
     const g = this.add.graphics().setDepth(D.hud);
 
-    // Header plaque.
+    // Header plaque: a strip across the top in portrait, a column left of the board in landscape.
+    const plaqueHud = LAYOUT.hud;
     g.fillStyle(0x140f33, 0.72);
-    g.fillRoundedRect(40, 26, GAME_WIDTH - 80, 132, 24);
+    g.fillRoundedRect(plaqueHud.plaque.x, plaqueHud.plaque.y, plaqueHud.plaque.w, plaqueHud.plaque.h, 24);
     g.lineStyle(1.5, 0xffffff, 0.07);
-    g.strokeRoundedRect(40, 26, GAME_WIDTH - 80, 132, 24);
+    g.strokeRoundedRect(plaqueHud.plaque.x, plaqueHud.plaque.y, plaqueHud.plaque.w, plaqueHud.plaque.h, 24);
 
-    this.add
-      .text(58, 42, 'SCORE', {
-        fontFamily: FONT,
-        fontSize: '15px',
-        color: '#8e8ac4',
-      })
-      .setDepth(D.hud)
-      .setLetterSpacing(3);
+    const place = (spot: HudSpot, text: Phaser.GameObjects.Text): Phaser.GameObjects.Text =>
+      text.setPosition(spot.x, spot.y).setOrigin(spot.originX, 0).setDepth(D.hud);
 
-    this.scoreText = this.add
-      .text(58, 62, '0', {
-        fontFamily: FONT,
-        fontSize: '44px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-      })
-      .setDepth(D.hud);
+    place(
+      plaqueHud.scoreLabel,
+      this.add.text(0, 0, 'SCORE', { fontFamily: FONT, fontSize: '15px', color: '#8e8ac4' }),
+    ).setLetterSpacing(3);
+
+    this.scoreText = place(
+      plaqueHud.score,
+      this.add.text(0, 0, '0', { fontFamily: FONT, fontSize: '44px', fontStyle: 'bold', color: '#ffffff' }),
+    );
     this.scoreText.setShadow(0, 3, 'rgba(10,4,32,0.7)', 8, true, true);
 
-    this.statLabel = this.add
-      .text(GAME_WIDTH - 58, 42, 'STAT', {
-        fontFamily: FONT,
-        fontSize: '15px',
-        color: '#8e8ac4',
-      })
-      .setOrigin(1, 0)
-      .setDepth(D.hud)
-      .setLetterSpacing(3);
+    this.statLabel = place(
+      plaqueHud.statLabel,
+      this.add.text(0, 0, 'STAT', { fontFamily: FONT, fontSize: '15px', color: '#8e8ac4' }),
+    ).setLetterSpacing(3);
 
-    this.statText = this.add
-      .text(GAME_WIDTH - 58, 62, '', {
-        fontFamily: FONT,
-        fontSize: '44px',
-        fontStyle: 'bold',
-        color: '#f0abfc',
-      })
-      .setOrigin(1, 0)
-      .setDepth(D.hud);
+    this.statText = place(
+      plaqueHud.stat,
+      this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '44px', fontStyle: 'bold', color: '#f0abfc' }),
+    );
 
-    this.levelText = this.add
-      .text(58, 126, 'LEVEL 1', {
-        fontFamily: FONT,
-        fontSize: '15px',
-        color: '#a7f3d0',
-      })
-      .setDepth(D.hud)
-      .setLetterSpacing(2);
+    this.levelText = place(
+      plaqueHud.level,
+      this.add.text(0, 0, 'LEVEL 1', { fontFamily: FONT, fontSize: '15px', color: '#a7f3d0' }),
+    ).setLetterSpacing(2);
 
-    this.targetText = this.add
-      .text(GAME_WIDTH - 58, 126, '', {
-        fontFamily: FONT,
-        fontSize: '15px',
-        color: '#8e8ac4',
-      })
-      .setOrigin(1, 0)
-      .setDepth(D.hud);
+    this.targetText = place(
+      plaqueHud.target,
+      this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '15px', color: '#8e8ac4' }),
+    );
 
     this.progress = this.add.graphics().setDepth(D.hud);
 
     // Combo + toast flourish over the board.
     this.comboText = this.add
-      .text(GAME_WIDTH / 2, COMBO_Y, '', {
+      .text(WORLD_WIDTH / 2, comboY(), '', {
         fontFamily: FONT,
         fontSize: '54px',
         fontStyle: 'bold',
@@ -550,7 +566,7 @@ export default class GameScene extends Phaser.Scene {
     // The message lines use the rounded display face with a thick dark outline, so they pop
     // off the gems instead of reading as a flat caption.
     this.comboNote = this.add
-      .text(GAME_WIDTH / 2, COMBO_NOTE_Y, '', {
+      .text(WORLD_WIDTH / 2, comboNoteY(), '', {
         fontFamily: MESSAGE_FONT,
         fontSize: '38px',
         fontStyle: 'bold',
@@ -579,7 +595,7 @@ export default class GameScene extends Phaser.Scene {
     this.toastText.setShadow(0, 3, 'rgba(6,2,20,0.85)', 8, true, true);
     this.toastBubble = this.add.graphics();
     this.toastBox = this.add
-      .container(GAME_WIDTH / 2, TOAST_Y, [this.toastBubble, this.toastText])
+      .container(WORLD_WIDTH / 2, toastY(), [this.toastBubble, this.toastText])
       .setDepth(D.fx)
       .setAlpha(0);
 
@@ -606,61 +622,60 @@ export default class GameScene extends Phaser.Scene {
       .setAlpha(0.85)
       .setVisible(false);
 
-    // Bottom controls. Positions come from width + gap so the row cannot drift into overlap.
-    const w = 148;
-    const gap = 14;
-    const total = w * 4 + gap * 3;
-    const startX = (GAME_WIDTH - total) / 2 + w / 2;
-    const y = 838;
+    // Controls: a row along the bottom in portrait, a column right of the board in landscape.
+    // Positions come from src/layout.ts, which spaces them so they cannot overlap.
+    const controls = LAYOUT.controls;
+    const [hintAt, pauseAt, soundAt, menuAt] = controls.centres;
+    const w = controls.w;
 
     const hud = (name: string, x: number, pill: Pill): void => {
       this.hudPills.set(name, pill);
     };
 
     const hintPill = new Pill(this, {
-      x: startX,
-      y,
+      x: hintAt.x,
+      y: hintAt.y,
       w,
-      h: 58,
+      h: controls.h,
       label: 'HINT',
       variant: 'ghost',
-      fontSize: 19,
+      fontSize: controls.font,
       radius: 16,
       onClick: () => this.showHint(false),
     });
-    hud('hint', startX, hintPill);
+    hud('hint', hintPill.x, hintPill);
     this.pausePill = new Pill(this, {
-      x: startX + (w + gap),
-      y,
+      x: pauseAt.x,
+      y: pauseAt.y,
       w,
-      h: 58,
+      h: controls.h,
       label: 'PAUSE',
       variant: 'ghost',
-      fontSize: 19,
+      fontSize: controls.font,
       radius: 16,
       onClick: () => this.togglePause(),
     });
     hud('pause', this.pausePill.x, this.pausePill);
     this.mutePill = new Pill(this, {
-      x: startX + (w + gap) * 2,
-      y,
+      x: soundAt.x,
+      y: soundAt.y,
       w,
-      h: 58,
+      h: controls.h,
       label: this.settings.muted ? 'MUTED' : 'SOUND',
       variant: 'ghost',
-      fontSize: 19,
+      fontSize: controls.font,
       radius: 16,
       onClick: () => this.toggleMute(),
     });
     hud('sound', this.mutePill.x, this.mutePill);
     const menuPill = new Pill(this, {
-      x: startX + (w + gap) * 3,
-      y,
+      x: menuAt.x,
+      y: menuAt.y,
       w,
-      h: 58,
+      h: controls.h,
       label: 'MENU',
       variant: 'ghost',
-      fontSize: 19,
+      fontSize: controls.font,
       radius: 16,
       onClick: () => this.leaveToMenu(),
     });
@@ -695,9 +710,7 @@ export default class GameScene extends Phaser.Scene {
     this.levelText.setText(`LEVEL ${this.level}`);
     this.targetText.setText(`${Math.min(this.levelScore, target).toLocaleString()} / ${target.toLocaleString()}`);
 
-    const x = 58;
-    const y = 150;
-    const w = GAME_WIDTH - 116;
+    const { x, y, w } = LAYOUT.hud.bar;
     const h = 12;
     this.progress.clear();
     this.progress.fillStyle(0x0b0824, 0.85);
@@ -718,7 +731,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.tweens.killTweensOf(this.toastBox);
     // Pop in with a little overshoot, sit still long enough to read, then drift up and out.
-    this.toastBox.setY(TOAST_Y).setAlpha(0).setScale(this.reduceMotion ? 1 : 0.55);
+    this.toastBox.setY(toastY()).setAlpha(0).setScale(this.reduceMotion ? 1 : 0.55);
     this.tweens.add({
       targets: this.toastBox,
       alpha: 1,
@@ -729,7 +742,7 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: this.toastBox,
       alpha: 0,
-      y: TOAST_Y - 28,
+      y: toastY() - 28,
       delay: (this.reduceMotion ? 0 : 320) + this.settings.messageHoldMs,
       duration: this.reduceMotion ? 0 : 420,
       ease: 'Sine.easeIn',
@@ -769,12 +782,12 @@ export default class GameScene extends Phaser.Scene {
       .setColor(TIER_COLORS[tier])
       .setAlpha(1)
       .setScale(1.5)
-      .setY(COMBO_Y);
+      .setY(comboY());
     this.comboNote
       .setText(note)
       .setAlpha(note ? 1 : 0)
       .setScale(1.35)
-      .setY(COMBO_NOTE_Y);
+      .setY(comboNoteY());
 
     this.tweens.add({
       targets: [this.comboText, this.comboNote],
@@ -790,14 +803,14 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: this.comboText,
       alpha: 0,
-      y: COMBO_Y - 40,
+      y: comboY() - 40,
       delay: this.reduceMotion ? 0 : TIMING.comboFadeMs,
       duration: fadeMs,
     });
     this.tweens.add({
       targets: this.comboNote,
       alpha: 0,
-      y: COMBO_NOTE_Y - 40,
+      y: comboNoteY() - 40,
       delay: this.reduceMotion ? 0 : note ? this.settings.messageHoldMs : TIMING.comboFadeMs,
       duration: fadeMs,
     });
@@ -818,7 +831,7 @@ export default class GameScene extends Phaser.Scene {
       this.hasInteracted = true;
       if (this.busy || this.over || this.paused) return;
 
-      const pos = this.cellAt(pointer.x, pointer.y);
+      const pos = this.cellAt(pointer.worldX, pointer.worldY);
       if (!pos) return;
 
       this.clearHint();
@@ -826,7 +839,7 @@ export default class GameScene extends Phaser.Scene {
       this.cursorRing.setVisible(false);
 
       this.dragFrom = pos;
-      this.dragStart = { x: pointer.x, y: pointer.y };
+      this.dragStart = { x: pointer.worldX, y: pointer.worldY };
 
       if (this.selected) {
         if (this.selected.row === pos.row && this.selected.col === pos.col) {
@@ -851,8 +864,8 @@ export default class GameScene extends Phaser.Scene {
       if (this.busy || this.over || this.paused) return;
       if (!pointer.isDown || !this.dragFrom) return;
 
-      const dx = pointer.x - this.dragStart.x;
-      const dy = pointer.y - this.dragStart.y;
+      const dx = pointer.worldX - this.dragStart.x;
+      const dy = pointer.worldY - this.dragStart.y;
       if (Math.hypot(dx, dy) < TILE * SWIPE_THRESHOLD) return;
 
       const direction =
@@ -1245,7 +1258,7 @@ export default class GameScene extends Phaser.Scene {
       work.push(
         tweenPromise(this, {
           targets: sprite,
-          scale: BASE_SCALE * 0.78,
+          scale: baseScale() * 0.78,
           duration: inhaleMs,
           ease: 'Quad.easeIn',
         }),
@@ -1270,7 +1283,7 @@ export default class GameScene extends Phaser.Scene {
       work.push(
         tweenPromise(this, {
           targets: sprite,
-          scale: BASE_SCALE * 1.9,
+          scale: baseScale() * 1.9,
           duration: explodeMs,
           delay: inhaleMs,
           ease: 'Back.easeOut',
@@ -1371,7 +1384,7 @@ export default class GameScene extends Phaser.Scene {
 
   private showBanner(text: string, note: string | null = null): void {
     const banner = this.add
-      .text(GAME_WIDTH / 2, COMBO_Y, text, {
+      .text(WORLD_WIDTH / 2, comboY(), text, {
         fontFamily: FONT,
         fontSize: '64px',
         fontStyle: 'bold',
@@ -1404,7 +1417,7 @@ export default class GameScene extends Phaser.Scene {
    */
   private showBannerNote(note: string): void {
     const line = this.add
-      .text(GAME_WIDTH / 2, COMBO_Y - 72, note, {
+      .text(WORLD_WIDTH / 2, comboY() - 72, note, {
         fontFamily: MESSAGE_FONT,
         fontSize: '38px',
         fontStyle: 'bold',
@@ -1453,7 +1466,7 @@ export default class GameScene extends Phaser.Scene {
           tweenPromise(this, {
             targets: sprite,
             alpha: 0.2,
-            scale: BASE_SCALE * 0.7,
+            scale: baseScale() * 0.7,
             duration: 160,
             ease: 'Quad.easeIn',
           }),
@@ -1479,7 +1492,7 @@ export default class GameScene extends Phaser.Scene {
           tweenPromise(this, {
             targets: sprite,
             alpha: 1,
-            scale: BASE_SCALE,
+            scale: baseScale(),
             duration: 220,
             ease: 'Back.easeOut',
           }),
@@ -1604,7 +1617,7 @@ export default class GameScene extends Phaser.Scene {
     const container = this.add.container(0, 0).setDepth(D.overlay);
 
     const scrim = this.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x05030f, 0.78)
+      .rectangle(WORLD_WIDTH / 2, GAME_HEIGHT / 2, WORLD_WIDTH, GAME_HEIGHT, 0x05030f, 0.78)
       .setInteractive();
     container.add(scrim);
 
@@ -1614,20 +1627,20 @@ export default class GameScene extends Phaser.Scene {
 
     const panel = this.add.graphics();
     panel.fillStyle(0x1b1440, 0.99);
-    panel.fillRoundedRect(GAME_WIDTH / 2 - panelW / 2, panelY - panelH / 2, panelW, panelH, 30);
+    panel.fillRoundedRect(WORLD_WIDTH / 2 - panelW / 2, panelY - panelH / 2, panelW, panelH, 30);
     panel.fillStyle(0xffffff, 0.05);
-    panel.fillRoundedRect(GAME_WIDTH / 2 - panelW / 2 + 4, panelY - panelH / 2 + 4, panelW - 8, panelH * 0.35, {
+    panel.fillRoundedRect(WORLD_WIDTH / 2 - panelW / 2 + 4, panelY - panelH / 2 + 4, panelW - 8, panelH * 0.35, {
       tl: 26,
       tr: 26,
       bl: 0,
       br: 0,
     });
     panel.lineStyle(2, 0xffffff, 0.12);
-    panel.strokeRoundedRect(GAME_WIDTH / 2 - panelW / 2, panelY - panelH / 2, panelW, panelH, 30);
+    panel.strokeRoundedRect(WORLD_WIDTH / 2 - panelW / 2, panelY - panelH / 2, panelW, panelH, 30);
     container.add(panel);
 
     const title = this.add
-      .text(GAME_WIDTH / 2, panelY - panelH / 2 + 62, config.title, {
+      .text(WORLD_WIDTH / 2, panelY - panelH / 2 + 62, config.title, {
         fontFamily: FONT,
         fontSize: '48px',
         fontStyle: 'bold',
@@ -1639,7 +1652,7 @@ export default class GameScene extends Phaser.Scene {
 
     config.lines.forEach((line, i) => {
       const text = this.add
-        .text(GAME_WIDTH / 2, panelY - panelH / 2 + 118 + i * 30, line, {
+        .text(WORLD_WIDTH / 2, panelY - panelH / 2 + 118 + i * 30, line, {
           fontFamily: FONT,
           fontSize: '21px',
           color: '#c9c6f5',
@@ -1651,7 +1664,7 @@ export default class GameScene extends Phaser.Scene {
     let buttonY = panelY - panelH / 2 + 176 + config.lines.length * 30;
     for (const button of config.buttons) {
       const pill = new Pill(this, {
-        x: GAME_WIDTH / 2,
+        x: WORLD_WIDTH / 2,
         y: buttonY,
         w: 380,
         h: 66,
@@ -1715,7 +1728,7 @@ export default class GameScene extends Phaser.Scene {
     if (!this.reduceMotion) {
       this.cameras.main.shake(240, 0.006);
       const flash = this.add
-        .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55)
+        .rectangle(WORLD_WIDTH / 2, GAME_HEIGHT / 2, WORLD_WIDTH, GAME_HEIGHT, 0x000000, 0.55)
         .setDepth(D.overlay - 1);
       this.tweens.add({ targets: flash, alpha: 0, duration: 500, onComplete: () => flash.destroy() });
     }

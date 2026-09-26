@@ -4,10 +4,9 @@
  */
 
 // ── View ──────────────────────────────────────────────────────────────────────
+/** Logical width. The height and gem size depend on the screen: see src/layout.ts. */
 export const GAME_WIDTH = 720;
-export const GAME_HEIGHT = 900;
-/** Rendered gem size on the board. Textures are generated at TEX_SIZE for crispness. */
-export const TILE = 72;
+/** Gem textures are generated at this size and scaled down to the on-screen tile. */
 export const TEX_SIZE = 128;
 export const BOARD_MAX_COLS = 8;
 

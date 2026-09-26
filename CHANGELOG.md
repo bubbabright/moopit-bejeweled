@@ -6,6 +6,13 @@ Newest first. The version stamp at the bottom of the menu tells you which one yo
 
 - The version line at the bottom of the menu now also shows the release name and when it was
   built (Eastern time).
+- On a phone held upright, the game now fills the whole screen instead of sitting in a box in
+  the middle. The gems are bigger and the buttons at the bottom are easier to hit.
+- Text and gems are sharper on phones.
+- Turn your phone sideways and the score moves to the left, the buttons to the right, and the
+  board stays in the middle. Your game carries on where it was.
+- Fixed: turning the phone sideways and back could leave the game tiny in the middle of the
+  screen.
 
 ## 2026-09-26 · `42b5b38`
 

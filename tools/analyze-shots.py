@@ -18,6 +18,7 @@ from pathlib import Path
 
 from PIL import Image
 
+# Fallback when geometry.json predates the per-screen layout (canvas.game).
 GAME_W, GAME_H = 720, 900
 
 
@@ -34,8 +35,9 @@ class Frame:
         self.dpr = canvas.get("dpr") or 1
         self.left = canvas["left"]
         self.top = canvas["top"]
-        self.sw = canvas["w"] / GAME_W
-        self.sh = canvas["h"] / GAME_H
+        game = canvas.get("game") or {}
+        self.sw = canvas["w"] / game.get("width", GAME_W)
+        self.sh = canvas["h"] / game.get("height", GAME_H)
 
     def to_px(self, gx: float, gy: float) -> tuple[int, int]:
         return (

@@ -36,17 +36,26 @@ const chrome = spawn(
     `--remote-debugging-port=${PORT}`,
     'about:blank',
   ],
-  { stdio: 'ignore' },
+  // Own process group, so cleanup can take down the GPU and renderer children too.
+  { stdio: 'ignore', detached: true },
 );
 
 const cleanup = () => {
   try {
-    chrome.kill('SIGKILL');
+    process.kill(-chrome.pid, 'SIGKILL');
   } catch {
     /* already gone */
   }
 };
 process.on('exit', cleanup);
+// A killed run (Ctrl-C, `timeout`) skips 'exit', which would leave headless Chromium
+// running and burning CPU. Close it on those signals too.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    cleanup();
+    process.exit(1);
+  });
+}
 
 /** Wait for the devtools endpoint, then return the first page target's websocket URL. */
 async function findTarget() {
@@ -177,6 +186,8 @@ const canvasInfo = await evaluate(`
       top: r.top,
       dpr: window.devicePixelRatio,
       viewport: { w: window.innerWidth, h: window.innerHeight },
+      // Logical size the scenes lay out in (720 wide; height follows the screen).
+      game: window.gemfallLayout ?? { width: 720, height: 900, zoom: 1, tile: 72 },
     };
   })()
 `);
@@ -189,8 +200,8 @@ console.log('canvas rect:', canvasInfo);
 
 /** Game coordinates → viewport coordinates. */
 const toPage = (gx, gy) => ({
-  x: canvasInfo.left + (gx * canvasInfo.w) / 720,
-  y: canvasInfo.top + (gy * canvasInfo.h) / 900,
+  x: canvasInfo.left + (gx * canvasInfo.w) / canvasInfo.game.width,
+  y: canvasInfo.top + (gy * canvasInfo.h) / canvasInfo.game.height,
 });
 
 const click = async (gx, gy) => {
@@ -457,7 +468,7 @@ const screenshotPath = await screenshot('game-played');
 const gameGeometry = await evaluate(`
   (() => {
     const s = window.gemfall.scene.getScene('game');
-    return { boardX: s.boardX, boardY: s.boardY, cols: s.spec.cols, rows: s.spec.rows, tile: 72 };
+    return { boardX: s.boardX, boardY: s.boardY, cols: s.spec.cols, rows: s.spec.rows, tile: window.gemfallLayout?.tile ?? 72 };
   })()
 `);
 writeFileSync(

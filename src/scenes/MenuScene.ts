@@ -4,7 +4,6 @@ import {
   DIFFICULTY_ORDER,
   FONT,
   MESSAGE_HOLD_STEPS_MS,
-  GAME_HEIGHT,
   GAME_WIDTH,
   GEM_COLORS,
   MENU,
@@ -27,6 +26,7 @@ import { haptics } from '../haptics';
 import { sfx } from '../audio/sfx';
 import { Pill } from '../ui/pill';
 import { gemTextureKey } from '../gfx/gems';
+import { MENU_FOOT_SHIFT, MENU_HEIGHT, MENU_MID_SHIFT, useMenuCamera } from '../layout';
 
 const BASE_SCALE = 112 / TEX_SIZE;
 
@@ -54,6 +54,7 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    useMenuCamera(this);
     this.modePills.clear();
     this.difficultyPills.clear();
     this.resumePill = undefined;
@@ -66,12 +67,12 @@ export default class MenuScene extends Phaser.Scene {
     this.drawTitle();
 
     // ── Mode picker ────────────────────────────────────────────────────────────
-    this.sectionLabel('MODE', 250);
+    this.sectionLabel('MODE', 250 + MENU_MID_SHIFT);
     const modeCentres = menuRowCentres(MODE_ORDER.length, GAME_WIDTH);
     MODE_ORDER.forEach((mode, i) => {
       const pill = new Pill(this, {
         x: modeCentres[i],
-        y: 312,
+        y: 312 + MENU_MID_SHIFT,
         w: MENU.pillW,
         h: 92,
         label: MODES[mode].label,
@@ -84,12 +85,12 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     // ── Difficulty picker ─────────────────────────────────────────────────────
-    this.sectionLabel('DIFFICULTY', 392);
+    this.sectionLabel('DIFFICULTY', 392 + MENU_MID_SHIFT);
     const difficultyCentres = menuRowCentres(DIFFICULTY_ORDER.length, GAME_WIDTH);
     DIFFICULTY_ORDER.forEach((difficulty, i) => {
       const pill = new Pill(this, {
         x: difficultyCentres[i],
-        y: 452,
+        y: 452 + MENU_MID_SHIFT,
         w: MENU.pillW,
         h: 78,
         label: DIFFICULTIES[difficulty].label,
@@ -104,7 +105,7 @@ export default class MenuScene extends Phaser.Scene {
     // ── Play ──────────────────────────────────────────────────────────────────
     const play = new Pill(this, {
       x: GAME_WIDTH / 2,
-      y: 576,
+      y: 576 + MENU_MID_SHIFT,
       w: 460,
       h: 88,
       label: 'PLAY',
@@ -130,7 +131,7 @@ export default class MenuScene extends Phaser.Scene {
     if (saved) {
       this.resumePill = new Pill(this, {
         x: GAME_WIDTH / 2,
-        y: 668,
+        y: 668 + MENU_MID_SHIFT,
         w: 460,
         h: 72,
         label: 'RESUME RUN',
@@ -149,7 +150,7 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     this.bestText = this.add
-      .text(GAME_WIDTH / 2, 736, '', {
+      .text(GAME_WIDTH / 2, 736 + MENU_MID_SHIFT, '', {
         fontFamily: FONT,
         fontSize: '20px',
         color: '#c9c6f5',
@@ -159,14 +160,14 @@ export default class MenuScene extends Phaser.Scene {
     this.add
       .text(
         GAME_WIDTH / 2,
-        792,
+        792 + MENU_FOOT_SHIFT,
         'Tap two neighbours · or drag · or arrows + Enter',
         { fontFamily: FONT, fontSize: '17px', color: '#8e8ac4' },
       )
       .setOrigin(0.5);
 
     this.add
-      .text(GAME_WIDTH / 2, 820, 'SPACE · hint      P · pause      M · mute', {
+      .text(GAME_WIDTH / 2, 820 + MENU_FOOT_SHIFT, 'SPACE · hint      P · pause      M · mute', {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#6f6ba8',
@@ -176,7 +177,7 @@ export default class MenuScene extends Phaser.Scene {
     // Which build is this? Auto-deploy makes it easy to be staring at a stale
     // bundle, so the version and commit are visible on the menu.
     this.add
-      .text(GAME_WIDTH / 2, 856, BUILD_LABEL, {
+      .text(GAME_WIDTH / 2, 856 + MENU_FOOT_SHIFT, BUILD_LABEL, {
         fontFamily: FONT,
         fontSize: '14px',
         color: '#57548a',
@@ -238,7 +239,7 @@ export default class MenuScene extends Phaser.Scene {
    */
   private createBuzzTest(): void {
     const status = this.add
-      .text(GAME_WIDTH / 2, 880, '', {
+      .text(GAME_WIDTH / 2, 880 + MENU_FOOT_SHIFT, '', {
         fontFamily: FONT,
         fontSize: '14px',
         color: '#c9c6f5',
@@ -293,7 +294,7 @@ export default class MenuScene extends Phaser.Scene {
       const sprite = this.add
         .image(
           Phaser.Math.Between(60, GAME_WIDTH - 60),
-          Phaser.Math.Between(60, GAME_HEIGHT - 60),
+          Phaser.Math.Between(60, MENU_HEIGHT - 60),
           gemTextureKey(type, 'none'),
         )
         .setScale(BASE_SCALE * Phaser.Math.FloatBetween(0.5, 1.15))
@@ -313,14 +314,14 @@ export default class MenuScene extends Phaser.Scene {
 
     // Faint vignette-ish frame.
     g.fillStyle(0x000000, 0.16);
-    g.fillRoundedRect(18, 18, GAME_WIDTH - 36, GAME_HEIGHT - 36, 34);
+    g.fillRoundedRect(18, 18, GAME_WIDTH - 36, MENU_HEIGHT - 36, 34);
     g.lineStyle(1, 0xffffff, 0.05);
-    g.strokeRoundedRect(18, 18, GAME_WIDTH - 36, GAME_HEIGHT - 36, 34);
+    g.strokeRoundedRect(18, 18, GAME_WIDTH - 36, MENU_HEIGHT - 36, 34);
   }
 
   private drawTitle(): void {
     const title = this.add
-      .text(GAME_WIDTH / 2, 140, 'GEMFALL', {
+      .text(GAME_WIDTH / 2, 140 + MENU_MID_SHIFT, 'GEMFALL', {
         fontFamily: FONT,
         fontSize: '96px',
         fontStyle: 'bold',
@@ -331,7 +332,7 @@ export default class MenuScene extends Phaser.Scene {
 
     // Gradient illusion: overlay a second, tinted copy clipped by alpha tween.
     const gloss = this.add
-      .text(GAME_WIDTH / 2, 140, 'GEMFALL', {
+      .text(GAME_WIDTH / 2, 140 + MENU_MID_SHIFT, 'GEMFALL', {
         fontFamily: FONT,
         fontSize: '96px',
         fontStyle: 'bold',
@@ -351,7 +352,7 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     this.taglineText = this.add
-      .text(GAME_WIDTH / 2, 200, voiceFor(this.moopit).menuTagline, {
+      .text(GAME_WIDTH / 2, 200 + MENU_MID_SHIFT, voiceFor(this.moopit).menuTagline, {
         fontFamily: FONT,
         fontSize: '21px',
         color: this.moopit ? MOOPIT_ACCENT : '#a5a2d8',

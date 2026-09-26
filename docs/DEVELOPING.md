@@ -49,7 +49,10 @@ build silently serves stale code — which is how a fixed bug can still look bro
 src/
   config.ts          every tunable: grid sizes, gem counts, scoring, cascade multipliers,
                      level targets, hint delays, animation timings, menu layout
-  main.ts            Phaser bootstrap; exposes window.gemfall for the test tools
+  layout.ts          screen-dependent layout: game size, gem size, HUD and button positions,
+                     render zoom for sharp text; portrait and landscape (see "Screen layout")
+  main.ts            Phaser bootstrap; rebuilds the layout when the phone turns; exposes
+                     window.gemfall and window.gemfallLayout for the test tools
   version.ts         build stamp shown on the menu, plus the internal stamp with codename and
                      build time (see DEPLOYING.md)
   haptics.ts         phone vibration (see "Haptics" below)
@@ -65,7 +68,7 @@ tools/
   selftest.sh        headless engine test runner
   playtest.mjs       browser integration test over the Chrome DevTools Protocol
   analyze-shots.py   offline screenshot checks (Pillow)
-  probe-scale.mjs    viewport-fit test
+  probe-scale.mjs    screen-fit, sharpness, tap and phone-turning test
   poc.sh             build and serve on the LAN (the dev preview, :4771)
   gates.sh           npm run gates: fresh build + preview, then all five gates, one verdict
   ship.sh            npm run ship: gates, push, wait until live, stop dev servers
@@ -137,10 +140,33 @@ It writes `poc/menu.png`, `poc/game-start.png`, `poc/game-played.png` and `poc/g
 really draws three separate buttons lined up with their hit boxes, and the board really shows
 every cell filled with the right number of gem colours.
 
-**`scaling`** loads the game at five viewports (iPhone portrait and landscape, a small Android,
-a tablet, a short desktop window) and checks the canvas fits with the 720:900 aspect ratio.
-It guards against a bug where `#game` sized itself by its own content, so the canvas inflated
-its parent and Phaser never scaled down on phones.
+**`scaling`** loads the game at seven viewports (tall Androids with and without browser bars,
+an iPhone, a small Android, a phone in landscape, a tablet, a short desktop window). At each it
+checks the layout `src/layout.ts` picked, that the canvas fits and, where it should, fills the
+screen, and the render zoom. On phones and tablets it taps a gem and checks that gem gets
+selected. Last, it turns a phone portrait → landscape → portrait mid-run and checks the canvas
+fills the screen each time, the run (score and board) carries over and taps still land.
+It also guards against an older bug where `#game` sized itself by its own content, so the canvas
+inflated its parent and Phaser never scaled down on phones.
+
+### Screen layout
+
+The game world is 720 logical px wide in portrait. Its height follows the screen (900 to
+1600), so a portrait phone is filled top to bottom and gems grow up to 83 px. Desktop and
+anything squarer stay 720×900. A phone in landscape (touch screen, at least 1.67:1) gets a
+720-tall world instead: board in the middle, HUD on the left, buttons stacked on the right.
+The menu is always a 720-wide column; in landscape its camera shrinks it to fit.
+
+The canvas is rendered at the screen's pixel density (up to 2×) and every scene's camera zooms
+by the same factor, so scenes keep working in logical px. Board input uses `pointer.worldX/Y`
+for that reason: `pointer.x/y` are canvas pixels. Text gets the matching resolution through
+`useRenderZoom`, which every scene calls first in `create()`.
+
+When the phone turns, `src/main.ts` waits for the page to settle, re-measures (Phaser's own
+handler measures too early and stays one orientation behind), and, if the phone went between
+portrait and landscape, restarts the active scene in the new layout. The game scene saves the
+run and resumes it, waiting for any falling gems first. On the game-over screen the new layout
+waits until the player leaves.
 
 ### Headless gotchas
 

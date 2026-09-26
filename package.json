@@ -2,7 +2,7 @@
   "name": "moopit-bejeweled",
   "private": true,
   "version": "0.2.0",
-  "codename": "tulip",
+  "codename": "puddles",
   "type": "module",
   "description": "GEMFALL — an original Bejeweled-like match-3 game (Phaser 3 + Vite + TypeScript)",
   "scripts": {
