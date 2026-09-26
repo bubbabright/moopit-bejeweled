@@ -12,6 +12,11 @@ export const TEX_SIZE = 128;
 export const BOARD_MAX_COLS = 8;
 
 export const FONT = 'Inter, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+/**
+ * Rounded display face for the little messages over the board (toasts, combo words). Bundled
+ * from @fontsource, so it ships with the game and nothing is fetched from anyone else.
+ */
+export const MESSAGE_FONT = `Fredoka, ${FONT}`;
 
 // ── Gems ──────────────────────────────────────────────────────────────────────
 /** One colour per gem type; shape is derived from the index so colour is never the only cue. */
@@ -160,8 +165,17 @@ export const TIMING = {
   rejectMs: 140,
   hintPulseMs: 620,
   comboFadeMs: 700,
-  levelBannerMs: 1_600,
 };
+
+/**
+ * How long messages stay on screen — toasts, the word under a combo number, and the level-up
+ * banner with its line. The player picks one with the MSG pill on the menu; each tap steps to
+ * the next and wraps. The shortest is still readable over the busy board (the old 1100 ms toast
+ * was gone before the eye landed on it). Kay said the messages on another game are what make
+ * her feel less scared, so the longer steps are there for her.
+ */
+export const MESSAGE_HOLD_STEPS_MS = [1_500, 3_000, 5_000, 8_000] as const;
+export const DEFAULT_MESSAGE_HOLD_MS = 3_000;
 
 // ── Interaction ───────────────────────────────────────────────────────────────
 export const SWIPE_THRESHOLD = 0.28; // fraction of TILE before a drag commits a swap

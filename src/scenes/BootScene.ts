@@ -12,6 +12,17 @@ export default class BootScene extends Phaser.Scene {
     generateUtilityTextures(this);
     generateGemTextures(this);
 
+    // Canvas text draws with whatever face is ready at the time, so wait for the message font
+    // before any scene makes text. Capped, so a slow or failed load falls back to Inter.
+    const fontReady = document.fonts?.load('700 32px Fredoka') ?? Promise.resolve();
+    const cap = new Promise((resolve) => window.setTimeout(resolve, 1500));
+    void Promise.race([fontReady, cap])
+      .catch(() => undefined)
+      .then(() => this.handOff());
+  }
+
+  private handOff(): void {
+
     // Hide the HTML boot splash now that textures exist.
     const boot = document.getElementById('boot');
     if (boot) {

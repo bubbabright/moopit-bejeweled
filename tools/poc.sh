@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Host the GEMFALL POC from this laptop on the LAN.
 #
-#   tools/poc.sh start    build dist, then serve it on 0.0.0.0:4173
+#   tools/poc.sh start    build dist, then serve it on 0.0.0.0:4771
 #   tools/poc.sh stop     stop the server
 #   tools/poc.sh status   show whether it is up and on which URLs
 #   tools/poc.sh restart  stop + start
@@ -10,7 +10,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${POC_PORT:-4173}"
+PORT="${POC_PORT:-4771}"
 PIDFILE="/tmp/gemfall-poc.pid"
 LOG="/tmp/gemfall-poc.log"
 
@@ -31,6 +31,11 @@ is_up() {
 do_stop() {
   local pid
   pid="$(listener_pid)"
+  # This PC runs other projects' servers too: only ever stop one started from this repo.
+  if [ -n "$pid" ] && [ "$(readlink "/proc/${pid}/cwd" 2>/dev/null)" != "$ROOT" ]; then
+    echo "FAIL: port ${PORT} is held by pid ${pid}, which is not a GEMFALL server; leaving it alone" >&2
+    return 1
+  fi
   if [ -n "$pid" ]; then
     kill "$pid" 2>/dev/null
     for _ in $(seq 1 15); do
@@ -97,7 +102,7 @@ do_status() {
 case "${1:-status}" in
   start)   do_start ;;
   stop)    do_stop ;;
-  restart) do_stop; do_start ;;
+  restart) do_stop && do_start ;;
   status)  do_status ;;
   *)       echo "usage: tools/poc.sh {start|stop|restart|status}" >&2; exit 2 ;;
 esac

@@ -8,8 +8,8 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const BASE = process.argv[2] ?? 'http://127.0.0.1:5173';
-const PORT = 9334;
+const BASE = process.argv[2] ?? 'http://127.0.0.1:4770';
+const PORT = 4781;
 
 const chrome = spawn(
   'chromium',

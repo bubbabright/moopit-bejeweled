@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const BASE = process.argv[2] ?? 'https://gemfall.moopit.fun';
-const PORT = 9355;
+const PORT = 4787;
 
 const VIEWPORTS = [
   { label: 'iPhone 14 portrait', width: 390, height: 844, dpr: 3, mobile: true },

@@ -2,7 +2,7 @@
 
 - **Status:** approved (interview complete) · POC in progress on laptop
 - **Date:** 2026-09-24
-- **Project dir:** `/mnt/nas/projects/moopit-fun-dashboard/moopit-bejeweled`
+- **Project dir:** `moopit-fun-dashboard/moopit-bejeweled`
 - **Parent context:** `moopit-fun-dashboard` (Dashy at `https://moopit.fun`, see `../PLAN-dashy-public-deploy.md`)
 - **Source material:** `duck.ai_2026-09-24_03-11-46.txt` (two AI-generated prototypes, used as reference only)
 
@@ -261,7 +261,7 @@ interface RunState {
 4. DNS: add `bejeweled` CNAME → Netlify subdomain, **proxied? No** — see §11 note about
    Cloudflare; tetris/snake are direct public URLs, so mirror that (no CF Access gate).
    Let's Encrypt cert is provisioned by Netlify automatically.
-5. Dashy integration: append a **Fun**-section item to `/srv/dashy/user-data/conf.yml`
+5. Dashy integration: append a **Fun**-section item to Dashy's `conf.yml`
    (`title: Bejeweled`, `url: https://bejeweled.moopit.fun/`, `target: newtab`, free FontAwesome
    icon e.g. `fa-gem`, `statusCheck: false`), then restart the Dashy container. Take a
    `conf.yml.bak-*-pre-bejeweled` backup first (convention from the deploy plan).

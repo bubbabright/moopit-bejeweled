@@ -109,6 +109,27 @@ class Haptics {
   }
 
   /**
+   * Raw hardware test for the menu's hold-to-test button: vibrates regardless of the BUZZ
+   * setting and the busy guard, and reports exactly what the browser said, so a phone that
+   * never buzzes can be diagnosed on the phone itself. `ms` of 0 stops any vibration.
+   */
+  test(ms: number): string {
+    if (!this.supported) return 'vibrate() not available in this browser';
+    let accepted = false;
+    try {
+      accepted = navigator.vibrate(ms);
+    } catch (err) {
+      return `vibrate() threw: ${String(err)}`;
+    }
+    if (ms === 0) return '';
+    // hasBeenActive is Chrome's sticky user activation; without it vibrate() is refused.
+    const active = navigator.userActivation?.hasBeenActive;
+    const activation = active === undefined ? '' : active ? ' · page tapped: yes' : ' · page tapped: NO';
+    this.busyUntil = 0;
+    return `vibrate(${ms}) → ${accepted ? 'accepted' : 'REFUSED'}${activation}`;
+  }
+
+  /**
    * A short, clearly felt buzz confirming haptics were just switched on. Fire it from the
    * toggle's own tap so the browser has user activation.
    */

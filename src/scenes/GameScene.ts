@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   DIFFICULTIES,
   FONT,
+  MESSAGE_FONT,
   GAME_HEIGHT,
   GAME_WIDTH,
   GEM_COLORS,
@@ -41,6 +42,7 @@ import {
   submitHighScore,
   type Settings,
 } from '../core/storage';
+import { MOOPIT_ACCENT, pick, voiceFor, type Voice } from '../messages';
 import { gemTextureKey } from '../gfx/gems';
 import { sfx } from '../audio/sfx';
 import { haptics } from '../haptics';
@@ -50,6 +52,12 @@ import type { Cell, Grid, Move, Pos } from '../core/types';
 const BOARD_TOP = 196;
 const BOARD_AREA_H = 584;
 const BOARD_PAD = 14;
+/** Board centre: where the combo popup and the level banner land. */
+const COMBO_Y = BOARD_TOP + BOARD_AREA_H / 2;
+/** The personal voice's word under the combo number, just below it. */
+const COMBO_NOTE_Y = COMBO_Y + 54;
+/** Toast line, clear of the combo flourish above it and still over the board. */
+const TOAST_Y = COMBO_Y + 108;
 const BASE_SCALE = TILE / TEX_SIZE;
 const D = { slots: 1, gems: 5, ring: 8, fx: 12, hud: 20, overlay: 60 };
 
@@ -96,6 +104,8 @@ export default class GameScene extends Phaser.Scene {
 
   private settings!: Settings;
   private reduceMotion = false;
+  /** Which wording this run speaks: the default, or the private voice from the menu. */
+  private moopit = false;
   private ready = false;
   private hasInteracted = false;
   private fadeRect: Phaser.GameObjects.Rectangle | null = null;
@@ -116,7 +126,13 @@ export default class GameScene extends Phaser.Scene {
   private targetText!: Phaser.GameObjects.Text;
   private progress!: Phaser.GameObjects.Graphics;
   private comboText!: Phaser.GameObjects.Text;
+  /** Word under the combo number. Blank in the default voice — see `src/messages.ts`. */
+  private comboNote!: Phaser.GameObjects.Text;
   private toastText!: Phaser.GameObjects.Text;
+  /** Rounded bubble behind the toast so it reads as a message, not text lost among the gems. */
+  private toastBubble!: Phaser.GameObjects.Graphics;
+  /** Holds bubble + text; this is what the toast tweens move and fade. */
+  private toastBox!: Phaser.GameObjects.Container;
   private mutePill!: Pill;
   private pausePill!: Pill;
   /** Bottom control pills, keyed by role. Exposed so the playtest can audit their layout. */
@@ -136,10 +152,15 @@ export default class GameScene extends Phaser.Scene {
 
   private resumeRequested = false;
 
+  private get voice(): Voice {
+    return voiceFor(this.moopit);
+  }
+
   create(): void {
     this.resetInstanceState();
     this.settings = loadSettings();
     this.reduceMotion = this.settings.reducedMotion;
+    this.moopit = this.settings.moopit;
     sfx.muted = this.settings.muted;
     haptics.enabled = this.settings.haptics;
 
@@ -185,7 +206,7 @@ export default class GameScene extends Phaser.Scene {
     this.ready = true;
 
     if (this.mode === 'endless' && !saved) {
-      this.showToast(`Endless · ${MODE_RULES.endlessShuffles} shuffles`, '#c7d2fe');
+      this.showToast(this.voice.toast.endlessStart(MODE_RULES.endlessShuffles), '#c7d2fe');
     }
   }
 
@@ -515,7 +536,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Combo + toast flourish over the board.
     this.comboText = this.add
-      .text(GAME_WIDTH / 2, BOARD_TOP + BOARD_AREA_H / 2, '', {
+      .text(GAME_WIDTH / 2, COMBO_Y, '', {
         fontFamily: FONT,
         fontSize: '54px',
         fontStyle: 'bold',
@@ -526,14 +547,39 @@ export default class GameScene extends Phaser.Scene {
       .setAlpha(0)
       .setBlendMode(Phaser.BlendModes.ADD);
 
-    this.toastText = this.add
-      .text(GAME_WIDTH / 2, BOARD_TOP + BOARD_AREA_H / 2 + 96, '', {
-        fontFamily: FONT,
-        fontSize: '26px',
+    // The message lines use the rounded display face with a thick dark outline, so they pop
+    // off the gems instead of reading as a flat caption.
+    this.comboNote = this.add
+      .text(GAME_WIDTH / 2, COMBO_NOTE_Y, '', {
+        fontFamily: MESSAGE_FONT,
+        fontSize: '38px',
         fontStyle: 'bold',
-        color: '#fde68a',
+        color: MOOPIT_ACCENT,
+        stroke: '#140c2e',
+        strokeThickness: 8,
       })
       .setOrigin(0.5)
+      .setDepth(D.fx)
+      .setAlpha(0);
+    this.comboNote.setShadow(0, 4, 'rgba(6,2,20,0.9)', 10, true, true);
+
+    this.toastText = this.add
+      .text(0, 0, '', {
+        fontFamily: MESSAGE_FONT,
+        fontSize: '34px',
+        fontStyle: 'bold',
+        color: '#fde68a',
+        align: 'center',
+        stroke: '#140c2e',
+        strokeThickness: 6,
+        // A long line wraps instead of running off the edges of the board.
+        wordWrap: { width: 600, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    this.toastText.setShadow(0, 3, 'rgba(6,2,20,0.85)', 8, true, true);
+    this.toastBubble = this.add.graphics();
+    this.toastBox = this.add
+      .container(GAME_WIDTH / 2, TOAST_Y, [this.toastBubble, this.toastText])
       .setDepth(D.fx)
       .setAlpha(0);
 
@@ -667,42 +713,93 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private showToast(message: string, color = '#fde68a'): void {
-    this.toastText.setText(message).setColor(color).setAlpha(0).setY(BOARD_TOP + BOARD_AREA_H / 2 + 96);
-    this.tweens.killTweensOf(this.toastText);
+    this.toastText.setText(message).setColor(color);
+    this.drawToastBubble(color);
+
+    this.tweens.killTweensOf(this.toastBox);
+    // Pop in with a little overshoot, sit still long enough to read, then drift up and out.
+    this.toastBox.setY(TOAST_Y).setAlpha(0).setScale(this.reduceMotion ? 1 : 0.55);
     this.tweens.add({
-      targets: this.toastText,
-      alpha: { from: 0, to: 1 },
-      y: this.toastText.y - 16,
-      duration: this.reduceMotion ? 0 : 200,
-      yoyo: true,
-      hold: 1100,
-      ease: 'Sine.easeOut',
+      targets: this.toastBox,
+      alpha: 1,
+      scale: 1,
+      duration: this.reduceMotion ? 0 : 320,
+      ease: 'Back.easeOut',
     });
+    this.tweens.add({
+      targets: this.toastBox,
+      alpha: 0,
+      y: TOAST_Y - 28,
+      delay: (this.reduceMotion ? 0 : 320) + this.settings.messageHoldMs,
+      duration: this.reduceMotion ? 0 : 420,
+      ease: 'Sine.easeIn',
+    });
+  }
+
+  /** Dark rounded bubble sized to the current toast text, rimmed in the toast's own colour. */
+  private drawToastBubble(color: string): void {
+    const rim = Phaser.Display.Color.HexStringToColor(color).color;
+    const w = this.toastText.width + 44;
+    const h = this.toastText.height + 20;
+    const r = Math.min(h / 2, 30);
+    const g = this.toastBubble;
+    g.clear();
+    // Soft outer glow, then the body, then a crisp rim.
+    g.lineStyle(10, rim, 0.14);
+    g.strokeRoundedRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8, r + 4);
+    g.fillStyle(0x140c2e, 0.82);
+    g.fillRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.lineStyle(2.5, rim, 0.9);
+    g.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
   }
 
   private showCombo(multiplier: number, gemsCleared: number): void {
     if (multiplier < 1.5) return;
     const tier = multiplierTier(multiplier);
+    // The default voice says nothing here; the personal voice adds a few words under the
+    // number. Kay reads these on a big chain, so they are reassurance rather than hype.
+    const note = pick(this.voice.comboTiers[tier] ?? [], '');
+
+    this.tweens.killTweensOf([this.comboText, this.comboNote]);
+
+    // Place both explicitly rather than resetting them in an `onComplete`: a combo that
+    // lands mid-fade used to inherit whatever half-finished position the last one left.
     this.comboText
       .setText(`×${multiplier.toFixed(1)}`)
       .setColor(TIER_COLORS[tier])
       .setAlpha(1)
-      .setScale(1.5);
+      .setScale(1.5)
+      .setY(COMBO_Y);
+    this.comboNote
+      .setText(note)
+      .setAlpha(note ? 1 : 0)
+      .setScale(1.35)
+      .setY(COMBO_NOTE_Y);
 
-    this.tweens.killTweensOf(this.comboText);
     this.tweens.add({
-      targets: this.comboText,
+      targets: [this.comboText, this.comboNote],
       scale: 1,
       duration: this.reduceMotion ? 0 : 220,
       ease: 'Back.easeOut',
     });
+
+    // The number keeps its snappy fade: it sits over the middle of the board, and the gems
+    // underneath are what the player is reading. The word is smaller and sits lower, so it
+    // can stay up — the little message is the whole point of the personal voice.
+    const fadeMs = this.reduceMotion ? 0 : 320;
     this.tweens.add({
       targets: this.comboText,
       alpha: 0,
-      y: this.comboText.y - 40,
+      y: COMBO_Y - 40,
       delay: this.reduceMotion ? 0 : TIMING.comboFadeMs,
-      duration: this.reduceMotion ? 0 : 320,
-      onComplete: () => this.comboText.setY(BOARD_TOP + BOARD_AREA_H / 2),
+      duration: fadeMs,
+    });
+    this.tweens.add({
+      targets: this.comboNote,
+      alpha: 0,
+      y: COMBO_NOTE_Y - 40,
+      delay: this.reduceMotion ? 0 : note ? this.settings.messageHoldMs : TIMING.comboFadeMs,
+      duration: fadeMs,
     });
   }
 
@@ -962,7 +1059,7 @@ export default class GameScene extends Phaser.Scene {
   private async rejectSwap(a: Pos, b: Pos): Promise<void> {
     this.busy = true;
     sfx.invalid();
-    this.showToast('No match there', '#fca5a5');
+    this.showToast(pick(this.voice.toast.noMatch, ''), '#fca5a5');
 
     swapCells(this.grid, a, b);
     this.rebuildPosIndex();
@@ -1268,13 +1365,13 @@ export default class GameScene extends Phaser.Scene {
     }
     if (leveled) {
       sfx.levelUp();
-      this.showBanner(`LEVEL ${this.level}`);
+      this.showBanner(this.voice.level.title(this.level), pick(this.voice.level.notes, '') || null);
     }
   }
 
-  private showBanner(text: string): void {
+  private showBanner(text: string, note: string | null = null): void {
     const banner = this.add
-      .text(GAME_WIDTH / 2, BOARD_TOP + BOARD_AREA_H / 2, text, {
+      .text(GAME_WIDTH / 2, COMBO_Y, text, {
         fontFamily: FONT,
         fontSize: '64px',
         fontStyle: 'bold',
@@ -1292,8 +1389,43 @@ export default class GameScene extends Phaser.Scene {
       duration: this.reduceMotion ? 0 : 260,
       ease: 'Back.easeOut',
       yoyo: true,
-      hold: this.reduceMotion ? 400 : TIMING.levelBannerMs,
+      // The player's message time, reduced motion or not: that setting is about movement,
+      // not about how long there is to read.
+      hold: this.settings.messageHoldMs,
       onComplete: () => banner.destroy(),
+    });
+
+    if (note) this.showBannerNote(note);
+  }
+
+  /**
+   * The personal voice's line above a level banner. Sits above the big LEVEL text, where
+   * nothing else lives, and fades out with it. Indigo, because it is her colour.
+   */
+  private showBannerNote(note: string): void {
+    const line = this.add
+      .text(GAME_WIDTH / 2, COMBO_Y - 72, note, {
+        fontFamily: MESSAGE_FONT,
+        fontSize: '38px',
+        fontStyle: 'bold',
+        color: MOOPIT_ACCENT,
+        stroke: '#140c2e',
+        strokeThickness: 8,
+      })
+      .setOrigin(0.5)
+      .setDepth(D.fx)
+      .setAlpha(0);
+    line.setShadow(0, 4, 'rgba(10,4,32,0.7)', 10, true, true);
+
+    this.tweens.add({
+      targets: line,
+      alpha: 1,
+      duration: this.reduceMotion ? 0 : 260,
+      yoyo: true,
+      // The player's message time, reduced motion or not: that setting is about movement,
+      // not about how long there is to read.
+      hold: this.settings.messageHoldMs,
+      onComplete: () => line.destroy(),
     });
   }
 
@@ -1306,7 +1438,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.busy = true;
-    this.showToast('No moves left — shuffling', '#fde68a');
+    this.showToast(pick(this.voice.toast.shuffling, ''), '#fde68a');
     sfx.shuffle();
 
     if (this.shufflesLeft !== Number.POSITIVE_INFINITY) {
@@ -1380,7 +1512,7 @@ export default class GameScene extends Phaser.Scene {
 
     const moves = findValidMoves(this.grid, 1);
     if (moves.length === 0) {
-      this.showToast('No moves — shuffling', '#fca5a5');
+      this.showToast(this.voice.toast.noMoves, '#fca5a5');
       void this.handleDeadlock();
       return;
     }
@@ -1403,7 +1535,7 @@ export default class GameScene extends Phaser.Scene {
       });
     }
 
-    if (auto) this.showToast('Try a highlighted swap', '#a7f3d0');
+    if (auto) this.showToast(pick(this.voice.toast.hint, ''), '#a7f3d0');
     this.scheduleAutoHint();
   }
 
@@ -1429,10 +1561,11 @@ export default class GameScene extends Phaser.Scene {
       this.time.paused = true;
       this.pausePill.setLabel('RESUME');
       this.buildOverlay({
-        title: 'PAUSED',
+        title: this.voice.paused.title,
         lines: [
           `${MODES[this.mode].label} · ${DIFFICULTIES[this.difficulty].label}`,
           `Score ${this.score.toLocaleString()} · Level ${this.level}`,
+          ...this.voice.paused.extra,
         ],
         buttons: [
           {
@@ -1588,12 +1721,13 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.buildOverlay({
-      title: 'GAME OVER',
+      title: this.voice.gameOver.title,
       lines: [
         reason,
         `SCORE  ${this.score.toLocaleString()}`,
-        isBest ? '★ NEW PERSONAL BEST ★' : `BEST  ${this.bestScore().toLocaleString()}`,
+        isBest ? this.voice.gameOver.best : `BEST  ${this.bestScore().toLocaleString()}`,
         `LEVEL ${this.level} · ${MODES[this.mode].label} · ${DIFFICULTIES[this.difficulty].label}`,
+        ...this.voice.gameOver.extra,
       ],
       buttons: [
         { label: 'PLAY AGAIN', variant: 'primary', onClick: () => this.restart() },

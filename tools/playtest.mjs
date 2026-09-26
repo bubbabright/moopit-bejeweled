@@ -15,8 +15,8 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const BASE = process.argv[2] ?? 'http://127.0.0.1:5173';
-const PORT = 9333;
+const BASE = process.argv[2] ?? 'http://127.0.0.1:4770';
+const PORT = 4780;
 const OUT_DIR = 'poc';
 
 mkdirSync(OUT_DIR, { recursive: true });

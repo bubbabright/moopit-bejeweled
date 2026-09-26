@@ -3,6 +3,7 @@ import {
   DIFFICULTIES,
   DIFFICULTY_ORDER,
   FONT,
+  MESSAGE_HOLD_STEPS_MS,
   GAME_HEIGHT,
   GAME_WIDTH,
   GEM_COLORS,
@@ -15,6 +16,12 @@ import {
   type Mode,
 } from '../config';
 import { loadSavedRun, loadSettings, saveSettings } from '../core/storage';
+import {
+  MOOPIT_ACCENT,
+  MOOPIT_TAPS,
+  MOOPIT_TAP_WINDOW_MS,
+  voiceFor,
+} from '../messages';
 import { VERSION_LABEL } from '../version';
 import { haptics } from '../haptics';
 import { sfx } from '../audio/sfx';
@@ -31,8 +38,16 @@ export default class MenuScene extends Phaser.Scene {
   private bestText!: Phaser.GameObjects.Text;
   private resumePill?: Pill;
   private mutePill!: Pill;
+  private taglineText!: Phaser.GameObjects.Text;
 
   private hapticPill!: Pill;
+  /** How long in-game messages stay up; each tap steps through `MESSAGE_HOLD_STEPS_MS`. */
+  private msgPill!: Pill;
+
+  /** The private voice, unlocked from the title. See `wireMoopitTitle`. */
+  private moopit = false;
+  private titleTaps = 0;
+  private lastTitleTapAt = 0;
 
   constructor() {
     super('menu');
@@ -42,6 +57,10 @@ export default class MenuScene extends Phaser.Scene {
     this.modePills.clear();
     this.difficultyPills.clear();
     this.resumePill = undefined;
+    this.titleTaps = 0;
+
+    // Read before drawTitle, which picks its wording from it.
+    this.moopit = loadSettings().moopit;
 
     this.drawBackdrop();
     this.drawTitle();
@@ -193,8 +212,74 @@ export default class MenuScene extends Phaser.Scene {
       onClick: () => this.toggleHaptics(),
     });
 
+    this.createBuzzTest();
+
+    // Leftmost of the top row, one more 130px slot left of HOLD TO TEST.
+    this.msgPill = new Pill(this, {
+      x: GAME_WIDTH - 92 - 3 * (130 + 14),
+      y: 54,
+      w: 130,
+      h: 52,
+      label: messageHoldLabel(settings.messageHoldMs),
+      variant: 'ghost',
+      fontSize: 16,
+      radius: 14,
+      onClick: () => this.cycleMessageHold(),
+    });
+
     this.selectMode(this.mode);
     this.selectDifficulty(this.difficulty);
+  }
+
+  /**
+   * Hold-to-test vibration, left of the BUZZ pill. Holding fires 200 ms pulses back to back
+   * so the motor runs continuously; releasing (or sliding off) stops it. A line under the
+   * version stamp shows what the browser answered, so a silent phone can be diagnosed without devtools.
+   */
+  private createBuzzTest(): void {
+    const status = this.add
+      .text(GAME_WIDTH / 2, 880, '', {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#c9c6f5',
+      })
+      .setOrigin(0.5);
+
+    const pulseMs = 200;
+    let timer: Phaser.Time.TimerEvent | undefined;
+
+    const stop = (): void => {
+      if (!timer) return;
+      timer.remove();
+      timer = undefined;
+      haptics.test(0);
+    };
+    const pulse = (): void => {
+      status.setText(haptics.test(pulseMs));
+    };
+
+    const testPill = new Pill(this, {
+      x: GAME_WIDTH - 92 - 2 * (130 + 14),
+      y: 54,
+      w: 130,
+      h: 52,
+      label: 'HOLD TO TEST',
+      variant: 'ghost',
+      fontSize: 14,
+      radius: 14,
+      onClick: stop,
+    });
+    testPill.on('pointerdown', () => {
+      stop();
+      pulse();
+      timer = this.time.addEvent({ delay: pulseMs - 20, loop: true, callback: pulse });
+    });
+    testPill.on('pointerout', stop);
+    this.input.on('pointerup', stop);
+    this.events.once('shutdown', () => {
+      stop();
+      this.input.off('pointerup', stop);
+    });
   }
 
   // ── Backdrop & title ─────────────────────────────────────────────────────────
@@ -265,13 +350,61 @@ export default class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    this.add
-      .text(GAME_WIDTH / 2, 200, 'match 3 · cascades · power gems', {
+    this.taglineText = this.add
+      .text(GAME_WIDTH / 2, 200, voiceFor(this.moopit).menuTagline, {
         fontFamily: FONT,
         fontSize: '21px',
-        color: '#a5a2d8',
+        color: this.moopit ? MOOPIT_ACCENT : '#a5a2d8',
       })
       .setOrigin(0.5);
+
+    this.wireMoopitTitle(title, gloss);
+  }
+
+  /**
+   * The way into the private voice: seven taps on the title, close together, and nothing on
+   * screen that says they are there. Each tap gets a small squash so a curious player can
+   * feel it counting, and the count forgets itself if the taps are too far apart — otherwise
+   * a queue of stray taps would eventually fall through the door.
+   *
+   * The title art never changes — this only decides what the line under it says.
+   * The gloss is tweened with the title so the two copies never separate while squashing.
+   */
+  private wireMoopitTitle(title: Phaser.GameObjects.Text, gloss: Phaser.GameObjects.Text): void {
+    title.setInteractive({ useHandCursor: true });
+    title.on('pointerdown', () => {
+      const now = this.time.now;
+      this.titleTaps = now - this.lastTitleTapAt > MOOPIT_TAP_WINDOW_MS ? 1 : this.titleTaps + 1;
+      this.lastTitleTapAt = now;
+
+      sfx.unlock();
+      sfx.click();
+      this.tweens.add({
+        targets: [title, gloss],
+        scale: { from: 0.94, to: 1 },
+        duration: 90,
+        ease: 'Quad.easeOut',
+      });
+
+      if (this.titleTaps < MOOPIT_TAPS) return;
+      this.titleTaps = 0;
+      this.setMoopit(!this.moopit);
+    });
+  }
+
+  /** Flip the private voice, remember the choice, and make it obvious it landed. */
+  private setMoopit(on: boolean): void {
+    this.moopit = on;
+
+    const settings = loadSettings();
+    settings.moopit = on;
+    saveSettings(settings);
+
+    this.taglineText.setText(voiceFor(on).menuTagline).setColor(on ? MOOPIT_ACCENT : '#a5a2d8');
+
+    haptics.confirm();
+    sfx.newBest();
+    if (!settings.reducedMotion) this.cameras.main.flash(220, 129, 140, 248);
   }
 
   private sectionLabel(text: string, y: number): void {
@@ -342,4 +475,16 @@ export default class MenuScene extends Phaser.Scene {
     // Fire one so the toggle demonstrates itself.
     if (settings.haptics) haptics.confirm();
   }
+
+  private cycleMessageHold(): void {
+    const settings = loadSettings();
+    const steps: readonly number[] = MESSAGE_HOLD_STEPS_MS;
+    // loadSettings guarantees a listed step, so indexOf is never -1 here.
+    settings.messageHoldMs = steps[(steps.indexOf(settings.messageHoldMs) + 1) % steps.length];
+    saveSettings(settings);
+    this.msgPill.setLabel(messageHoldLabel(settings.messageHoldMs));
+  }
 }
+
+/** "MSG 1.5s", "MSG 3s" — the pill's label for a message time. */
+const messageHoldLabel = (ms: number): string => `MSG ${ms / 1000}s`;

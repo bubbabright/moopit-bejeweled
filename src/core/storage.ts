@@ -1,4 +1,11 @@
-import { STORAGE, highScoreKey, type Difficulty, type Mode } from '../config';
+import {
+  DEFAULT_MESSAGE_HOLD_MS,
+  MESSAGE_HOLD_STEPS_MS,
+  STORAGE,
+  highScoreKey,
+  type Difficulty,
+  type Mode,
+} from '../config';
 import { deserializeGrid, serializeGrid } from './board';
 import type { Grid, SerializedGrid } from './types';
 
@@ -7,6 +14,13 @@ export interface Settings {
   reducedMotion: boolean;
   /** Vibration on match explosions, where the platform supports it. */
   haptics: boolean;
+  /**
+   * The private voice (see `src/messages.ts`), unlocked by tapping the menu title
+   * `MOOPIT_TAPS` times. Stored rather than session-only so it survives a reload.
+   */
+  moopit: boolean;
+  /** How long messages stay on screen, one of `MESSAGE_HOLD_STEPS_MS` (the menu's MSG pill). */
+  messageHoldMs: number;
 }
 
 export interface HighScore {
@@ -45,6 +59,8 @@ export const defaultSettings = (): Settings => ({
   muted: false,
   reducedMotion: systemPrefersReducedMotion(),
   haptics: true,
+  moopit: false,
+  messageHoldMs: DEFAULT_MESSAGE_HOLD_MS,
 });
 
 const read = <T>(key: string, fallback: T): T => {
@@ -76,6 +92,11 @@ export function loadSettings(): Settings {
     reducedMotion:
       typeof stored.reducedMotion === 'boolean' ? stored.reducedMotion : base.reducedMotion,
     haptics: typeof stored.haptics === 'boolean' ? stored.haptics : base.haptics,
+    moopit: typeof stored.moopit === 'boolean' ? stored.moopit : base.moopit,
+    // Only one of the menu's steps is valid: an old or hand-edited value falls back to default.
+    messageHoldMs: (MESSAGE_HOLD_STEPS_MS as readonly number[]).includes(stored.messageHoldMs as number)
+      ? (stored.messageHoldMs as number)
+      : base.messageHoldMs,
   };
 }
 

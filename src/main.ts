@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
+import '@fontsource/fredoka/latin-700.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
-import { VERSION_LABEL } from './version';
+import { BUILD_LABEL } from './version';
 import BootScene from './scenes/BootScene';
 import MenuScene from './scenes/MenuScene';
 import GameScene from './scenes/GameScene';
@@ -35,6 +36,6 @@ const debug = window as unknown as {
   gemfallPhaser?: string;
 };
 debug.gemfall = game;
-debug.gemfallVersion = VERSION_LABEL;
+debug.gemfallVersion = BUILD_LABEL;
 // Phaser is bundled, not global, so expose its version for diagnostics.
 debug.gemfallPhaser = Phaser.VERSION;

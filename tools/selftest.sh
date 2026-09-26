@@ -6,7 +6,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${SELFTEST_PORT:-5173}"
+PORT="${SELFTEST_PORT:-4772}"
 URL="http://127.0.0.1:${PORT}/selftest.html"
 CHROME="${CHROME:-/usr/bin/chromium}"
 
@@ -22,12 +22,20 @@ trap cleanup EXIT
 
 if ! ss -ltn | grep -q ":${PORT} "; then
   echo "starting vite dev on ${PORT}…"
-  npx vite dev --host 127.0.0.1 --port "$PORT" >/tmp/gemfall-selftest-dev.log 2>&1 &
+  # Run vite itself, not `npx vite`: $! must be the server, or the cleanup trap only kills
+  # npx and every run leaves an orphaned dev server holding the port.
+  "$ROOT/node_modules/.bin/vite" dev --host 127.0.0.1 --port "$PORT" >/tmp/gemfall-selftest-dev.log 2>&1 &
   started_server=$!
   for _ in $(seq 1 30); do
     ss -ltn | grep -q ":${PORT} " && break
     sleep 1
   done
+elif ! curl -fsS "$URL" 2>/dev/null | grep -q 'core self-test'; then
+  # Something else already owns the port (another project, or a stale server from a moved
+  # folder). Reusing it would report "no verdict" and look like a broken engine. Match the
+  # page's title, not the status: Vite answers 200 with its own index for any .html path.
+  echo "FAIL: port ${PORT} is held by a server that doesn't serve this repo (set SELFTEST_PORT)" >&2
+  exit 2
 fi
 
 if ! ss -ltn | grep -q ":${PORT} "; then
