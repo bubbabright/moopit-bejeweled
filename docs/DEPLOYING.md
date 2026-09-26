@@ -36,13 +36,12 @@ netlify deploy --prod --dir=dist
 
 Every build is stamped with the version from `package.json` and the commit it came from, e.g.
 `v0.2.0 · 7d40db0`. `vite.config.ts` reads `COMMIT_REF` (set by Netlify) or `GIT_COMMIT`, and
-local builds say `local`. The stamp shows at the bottom of the menu.
-
-There's also an **internal stamp**, never shown to players, that adds the release codename and
-the build time in UTC to the minute: `v0.2.0 · 7d40db0 · "tulip" · 2026-09-26T14:03Z`. The
-codename is the `codename` field in `package.json`; Daniel picks it, so change it only when he
-says. Left empty, it's just omitted. `window.gemfallVersion` holds this internal stamp in
-devtools, and `npm run playtest` and `npm run gates` print it.
+local builds say `local`. The full stamp adds the release codename and the build time in US
+Eastern, to the minute: `v0.2.0 · 42b5b38 · "tulip" · 2026-09-26 03:47 EDT` (EST in winter;
+converted when the bundle is built, so everyone sees the same text). It shows at the bottom of
+the menu, `window.gemfallVersion` holds it in devtools, and `npm run playtest` and
+`npm run gates` print it. The codename is the `codename` field in `package.json`; Daniel picks
+it, so change it only when he says. Left empty, it's just omitted.
 
 If a phone still shows the old stamp after a deploy, it's a cached page. Reload it, or close the
 tab and reopen it.

@@ -19,15 +19,15 @@ export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__
 export const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'local';
 /** Release codename from package.json `codename`; empty until one is chosen. */
 export const CODENAME = typeof __CODENAME__ === 'string' ? __CODENAME__ : '';
-/** UTC build time to the minute, e.g. "2026-09-26T14:03Z". */
+/** Build time in US Eastern to the minute, e.g. "2026-09-26 03:47 EDT" (see vite.config.ts). */
 export const BUILD_TIME = typeof __BUILD_TIME__ === 'string' ? __BUILD_TIME__ : 'unbuilt';
 
-/** e.g. "v0.2.0 · d07b4a8" — version first, then the commit it was built from. Shown on the menu. */
+/** e.g. "v0.2.0 · d07b4a8" — version first, then the commit it was built from. */
 export const VERSION_LABEL = `v${APP_VERSION} · ${BUILD_ID}`;
 
 /**
- * Internal stamp, e.g. `v0.2.0 · d07b4a8 · "tulip" · 2026-09-26T14:03Z`. Not shown to players;
- * exposed as `window.gemfallVersion` and printed by the playtest and scaling tools.
+ * Full stamp, e.g. `v0.2.0 · d07b4a8 · "tulip" · 2026-09-26 03:47 EDT`. Shown at the bottom
+ * of the menu, exposed as `window.gemfallVersion`, and printed by the playtest and scaling tools.
  */
 export const BUILD_LABEL = [VERSION_LABEL, CODENAME && `"${CODENAME}"`, BUILD_TIME]
   .filter(Boolean)

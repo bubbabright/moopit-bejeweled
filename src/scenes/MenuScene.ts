@@ -22,7 +22,7 @@ import {
   MOOPIT_TAP_WINDOW_MS,
   voiceFor,
 } from '../messages';
-import { VERSION_LABEL } from '../version';
+import { BUILD_LABEL } from '../version';
 import { haptics } from '../haptics';
 import { sfx } from '../audio/sfx';
 import { Pill } from '../ui/pill';
@@ -176,7 +176,7 @@ export default class MenuScene extends Phaser.Scene {
     // Which build is this? Auto-deploy makes it easy to be staring at a stale
     // bundle, so the version and commit are visible on the menu.
     this.add
-      .text(GAME_WIDTH / 2, 856, VERSION_LABEL, {
+      .text(GAME_WIDTH / 2, 856, BUILD_LABEL, {
         fontFamily: FONT,
         fontSize: '14px',
         color: '#57548a',

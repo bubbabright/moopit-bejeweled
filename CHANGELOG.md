@@ -2,6 +2,11 @@
 
 Newest first. The version stamp at the bottom of the menu tells you which one you have.
 
+## Not live yet
+
+- The version line at the bottom of the menu now also shows the release name and when it was
+  built (Eastern time).
+
 ## 2026-09-26 · `42b5b38`
 
 - **HOLD TO TEST** button on the menu: hold it to check whether your phone can buzz. The line at

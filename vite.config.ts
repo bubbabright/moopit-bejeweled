@@ -1,6 +1,25 @@
 import { defineConfig, loadEnv } from 'vite';
 import { version as pkgVersion, codename } from './package.json';
 
+/**
+ * Build time in US Eastern, to the minute, e.g. "2026-09-26 03:47 EDT" (EST in winter).
+ * Done here at build time, so every viewer sees the same text whatever their own time zone.
+ */
+function easternTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  }).formatToParts(date);
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')} ${get('timeZoneName')}`;
+}
+
 export default defineConfig(({ mode }) => {
   // Prefix '' returns every env var, so only read the keys we mean to stamp.
   // Never spread this object into `define`, or secrets would end up in the bundle.
@@ -17,10 +36,9 @@ export default defineConfig(({ mode }) => {
       // Surfaced by src/version.ts, shown in the menu and reported by the test tools.
       __APP_VERSION__: JSON.stringify(pkgVersion),
       __BUILD_ID__: JSON.stringify(buildId),
-      // Internal only (devtools + test tools, not the menu): the release codename Daniel sets
-      // in package.json, and when this bundle was built, to the minute, in UTC.
+      // The release codename Daniel sets in package.json, and when this bundle was built.
       __CODENAME__: JSON.stringify(codename ?? ''),
-      __BUILD_TIME__: JSON.stringify(`${new Date().toISOString().slice(0, 16)}Z`),
+      __BUILD_TIME__: JSON.stringify(easternTime(new Date())),
     },
     build: {
       target: 'es2020',
